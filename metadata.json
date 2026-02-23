@@ -1,0 +1,5 @@
+{
+  "name": "RefOPx",
+  "description": "An advanced operations analytics dashboard for oil refineries. It leverages Gemini AI to analyze real-time sensor data, predict equipment failures, and optimize production efficiency through an intuitive, ash-mode industrial interface.",
+  "requestFramePermissions": []
+}

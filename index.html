@@ -1,0 +1,156 @@
+
+<!DOCTYPE html>
+<html lang="en" data-theme="industrial">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="theme-color" content="#0f172a" />
+    <title>RefOPx | Refinery Intelligence</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <script>
+      tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['Inter', 'sans-serif'],
+              mono: ['JetBrains Mono', 'monospace'],
+            },
+            colors: {
+              brand: {
+                sky: '#0ea5e9',
+                teal: '#14b8a6',
+                olive: '#84cc16',
+                dark: '#0f172a',
+              },
+              industrial: {
+                950: '#020617',
+                900: '#0f172a',
+                800: '#1e293b',
+                700: '#334155',
+                600: '#475569',
+                500: '#64748b',
+              },
+              neon: {
+                blue: '#3b82f6',
+                green: '#10b981',
+                amber: '#f59e0b',
+                red: '#ef4444',
+                purple: '#8b5cf6',
+              }
+            },
+            boxShadow: {
+              'glass': '0 8px 32px 0 rgba(0, 0, 0, 0.37)',
+              'neon': '0 0 10px rgba(59, 130, 246, 0.5)',
+            },
+            backdropBlur: {
+              'xs': '2px',
+            }
+          }
+        }
+      }
+    </script>
+    <style>
+      :root[data-theme='industrial'] {
+        --text-main: #f8fafc;
+        --text-secondary: #94a3b8;
+        --glass-bg: rgba(15, 23, 42, 0.65);
+        --glass-border: rgba(255, 255, 255, 0.08);
+        --glass-shimmer: rgba(255, 255, 255, 0.05);
+        --body-bg: #020617;
+      }
+
+      :root[data-theme='light'] {
+        --text-main: #0f172a;
+        --text-secondary: #475569;
+        --glass-bg: rgba(255, 255, 255, 0.85);
+        --glass-border: rgba(226, 232, 240, 0.8);
+        --glass-shimmer: rgba(255, 255, 255, 0.4);
+        --body-bg: #f1f5f9;
+      }
+
+      body {
+        min-height: 100vh;
+        color: var(--text-main);
+        font-family: 'Inter', sans-serif;
+        transition: color 0.3s ease;
+      }
+      
+      /* Liquid Backgrounds */
+      .liquid-bg-industrial {
+        background-color: #000000;
+        background-image: 
+          radial-gradient(at 0% 0%, hsla(253,16%,7%,1) 0, transparent 50%), 
+          radial-gradient(at 50% 0%, hsla(225,39%,30%,1) 0, transparent 50%), 
+          radial-gradient(at 100% 0%, hsla(339,49%,30%,1) 0, transparent 50%);
+        background-attachment: fixed;
+        background-size: cover;
+      }
+
+      .liquid-bg-light {
+        background-color: #f1f5f9;
+        background-image: 
+          radial-gradient(at 40% 20%, hsla(28,100%,74%,0.2) 0px, transparent 50%),
+          radial-gradient(at 80% 0%, hsla(189,100%,56%,0.2) 0px, transparent 50%),
+          radial-gradient(at 0% 50%, hsla(340,100%,76%,0.2) 0px, transparent 50%);
+        background-attachment: fixed;
+        background-size: cover;
+      }
+      
+      .glass-panel {
+        background: var(--glass-bg);
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+        border: 1px solid var(--glass-border);
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+      }
+
+      /* Custom scrollbar */
+      ::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+      }
+      ::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: rgba(148, 163, 184, 0.2);
+        border-radius: 4px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: rgba(148, 163, 184, 0.4);
+      }
+
+      .custom-scrollbar {
+        scrollbar-width: thin;
+        scrollbar-color: rgba(148, 163, 184, 0.2) transparent;
+      }
+
+      /* Animations */
+      @keyframes pulse-glow {
+        0%, 100% { box-shadow: 0 0 5px rgba(59, 130, 246, 0.5); }
+        50% { box-shadow: 0 0 20px rgba(59, 130, 246, 0.8); }
+      }
+      .animate-pulse-glow {
+        animation: pulse-glow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+      }
+    </style>
+    <script type="importmap">
+      {
+        "imports": {
+          "react/": "https://aistudiocdn.com/react@^19.2.1/",
+          "react": "https://aistudiocdn.com/react@^19.2.1",
+          "recharts": "https://aistudiocdn.com/recharts@^3.5.1",
+          "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.1/",
+          "lucide-react": "https://aistudiocdn.com/lucide-react@^0.556.0",
+          "@google/genai": "https://aistudiocdn.com/@google/genai@^1.31.0",
+          "marked": "https://aistudiocdn.com/marked@^17.0.1"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>
