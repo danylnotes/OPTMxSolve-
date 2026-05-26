@@ -1,9 +1,9 @@
 
 import React from 'react';
-import { 
-  LayoutDashboard, Activity, Settings, Zap, 
+import {
+  LayoutDashboard, Activity, Settings, Zap,
   Droplet, CircleDollarSign, ShieldCheck, User,
-  Database, PlayCircle, LogOut, MessageSquare, FileText
+  Database, PlayCircle, LogOut, MessageSquare, FileText, Fingerprint
 } from 'lucide-react';
 import { Logo } from './Logo';
 
@@ -28,6 +28,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, user,
     { id: 'economics', label: 'Economics', icon: CircleDollarSign },
     { id: 'risk', label: 'Reliability', icon: ShieldCheck },
     { id: 'sim', label: 'Simulation', icon: PlayCircle },
+    { id: 'aosp-os', label: 'Decision OS', icon: Fingerprint },
     { id: 'settings', label: 'Settings', icon: Settings },
   ];
 

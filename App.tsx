@@ -18,6 +18,7 @@ import { RefineryUnit, Alert, UnitStatus } from './types';
 import { Menu, KeyRound, LogIn, AlertTriangle, ShieldCheck, Gauge, Layers, Wrench, Calendar, Activity } from 'lucide-react';
 import { LIMSModule } from './components/LIMSModule';
 import { ExportModule } from './components/ExportModule';
+import { AOSPDecisionOS } from './components/AOSPDecisionOS';
 
 const STAFF_REGISTRY: Record<string, { name: string, role: string }> = {
   "MD001": { name: "Kwame Mensah", role: "Managing Director" },
@@ -302,6 +303,8 @@ const App: React.FC = () => {
         return <ExportModule />;
       case 'sim':
         return <SimulationModule user={user} />;
+      case 'aosp-os':
+        return <AOSPDecisionOS />;
       case 'risk':
         return <RiskReliabilityModule />;
       case 'settings':
