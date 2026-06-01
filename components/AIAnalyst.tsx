@@ -2,10 +2,40 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Send, Bot, User, Loader2, Sparkles, MoreVertical, Terminal } from 'lucide-react';
 import { RefineryUnit, ChatMessage } from '../types';
-import { chatWithDataStream } from '../services/geminiService';
 
 interface AIAnalystProps {
   units: RefineryUnit[];
+}
+
+const BACKEND_URL = 'http://localhost:8000';
+
+async function analyzeWithClaude(query: string, units: RefineryUnit[]): Promise<string> {
+  const response = await fetch(`${BACKEND_URL}/api/ai/analyze`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      query,
+      units: units.map(u => ({
+        id: u.id,
+        name: u.name,
+        status: u.status,
+        load: u.sensors?.find(s => s.id.includes('load'))?.value ?? null,
+        temperature: u.sensors?.find(s => s.id.includes('temp'))?.value ?? null,
+        pressure: u.sensors?.find(s => s.id.includes('press'))?.value ?? null,
+      })),
+      context: {
+        timestamp: new Date().toISOString(),
+        total_units: units.length,
+        operational_count: units.filter(u => u.status === 'operational').length,
+      },
+    }),
+  });
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(`Backend error ${response.status}: ${err}`);
+  }
+  const data = await response.json();
+  return data.analysis ?? data.message ?? JSON.stringify(data);
 }
 
 export const AIAnalyst: React.FC<AIAnalystProps> = ({ units }) => {
@@ -13,7 +43,7 @@ export const AIAnalyst: React.FC<AIAnalystProps> = ({ units }) => {
     {
       id: 'welcome',
       role: 'model',
-      text: 'Refinery Intelligence Core online. Analyzing telemetry streams. Awaiting operator query.',
+      text: 'Refinery Intelligence Core online — powered by Claude Opus. Analyzing telemetry streams. Awaiting operator query.',
       timestamp: new Date()
     }
   ]);
@@ -49,33 +79,22 @@ export const AIAnalyst: React.FC<AIAnalystProps> = ({ units }) => {
     setIsLoading(true);
 
     try {
-        const history = messages.concat(userMsg).map(m => ({ role: m.role, text: m.text }));
         const modelMsgId = (Date.now() + 1).toString();
         const modelMsgPlaceholder: ChatMessage = {
             id: modelMsgId,
             role: 'model',
-            text: '', 
+            text: '',
             timestamp: new Date()
         };
         setMessages(prev => [...prev, modelMsgPlaceholder]);
 
-        const streamResponse = await chatWithDataStream(history, units);
+        const analysisText = await analyzeWithClaude(inputValue, units);
 
-        if (!streamResponse) throw new Error("No response stream returned");
+        if (!isMounted.current) return;
+        setMessages(prev => prev.map(m =>
+            m.id === modelMsgId ? { ...m, text: analysisText } : m
+        ));
 
-        for await (const chunk of streamResponse) {
-            if (!isMounted.current) break;
-            try {
-                const text = chunk.text;
-                if (text) {
-                    setMessages(prev => prev.map(msg => 
-                        msg.id === modelMsgId ? { ...msg, text: msg.text + text } : msg
-                    ));
-                }
-            } catch (err) {
-                console.warn("Skipped blocked/malformed chunk", err);
-            }
-        }
     } catch (e: any) {
         console.error("Stream Fatal Error", e);
         if (isMounted.current) {
@@ -104,7 +123,7 @@ export const AIAnalyst: React.FC<AIAnalystProps> = ({ units }) => {
                   <Bot className={`w-6 h-6 ${isDay ? 'text-brand-sky' : 'text-neon-blue'}`} />
               </div>
               <div className="flex flex-col">
-                  <span className={`font-bold text-base ${isDay ? 'text-slate-800' : 'text-white'}`}>Gemini Operational Core</span>
+                  <span className={`font-bold text-base ${isDay ? 'text-slate-800' : 'text-white'}`}>Claude Operational Core</span>
                   <span className={`text-[10px] uppercase tracking-widest font-bold flex items-center gap-1 ${isDay ? 'text-emerald-600' : 'text-neon-green'}`}>
                     <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse"></span> Online
                   </span>
@@ -169,7 +188,7 @@ export const AIAnalyst: React.FC<AIAnalystProps> = ({ units }) => {
                 value={inputValue}
                 onChange={(e) => setInputValue(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
-                placeholder="Ask Gemini about plant status, anomalies, or optimization..."
+                placeholder="Ask Claude about plant status, anomalies, or optimization..."
                 className={`flex-1 bg-transparent px-4 py-2 focus:outline-none text-sm ${isDay ? 'text-slate-800 placeholder-slate-400' : 'text-white placeholder-gray-500'}`}
             />
             <button

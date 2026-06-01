@@ -19,6 +19,10 @@ import { Menu, KeyRound, LogIn, AlertTriangle, ShieldCheck, Gauge, Layers, Wrenc
 import { LIMSModule } from './components/LIMSModule';
 import { ExportModule } from './components/ExportModule';
 import { AOSPDecisionOS } from './components/AOSPDecisionOS';
+import { PlantStatusSchematic } from './components/PlantStatusSchematic';
+import { MaterialBalanceSankey } from './components/MaterialBalanceSankey';
+import { SteamBalanceVisualization } from './components/SteamBalanceVisualization';
+import { OptimizationModule } from './components/OptimizationModule';
 
 const STAFF_REGISTRY: Record<string, { name: string, role: string }> = {
   "MD001": { name: "Kwame Mensah", role: "Managing Director" },
@@ -293,6 +297,30 @@ const App: React.FC = () => {
         );
       case 'analytics':
         return <AIAnalyst units={units} />;
+      case 'plant-status':
+        return (
+          <div className="space-y-4 animate-in fade-in">
+            <PlantStatusSchematic units={units} isDay={isDay} onSelectUnit={(id) => { setSelectedUnitId(id); setActiveTab('units'); }} />
+          </div>
+        );
+      case 'material-balance':
+        return (
+          <div className="space-y-4 animate-in fade-in">
+            <MaterialBalanceSankey units={units} isDay={isDay} />
+          </div>
+        );
+      case 'steam-balance':
+        return (
+          <div className="space-y-4 animate-in fade-in">
+            <SteamBalanceVisualization isDay={isDay} />
+          </div>
+        );
+      case 'optimize':
+        return (
+          <div className="space-y-4 animate-in fade-in">
+            <OptimizationModule isDay={isDay} />
+          </div>
+        );
       case 'energy':
         return <EnergyModule dataVersion={dataVersion} />;
       case 'economics':
@@ -309,9 +337,9 @@ const App: React.FC = () => {
         return <RiskReliabilityModule />;
       case 'settings':
         return <Settings units={units} onImportData={handleDataImport} onThemeChange={(t) => document.documentElement.setAttribute('data-theme', t)} />;
-      case 'tank-farm': 
+      case 'tank-farm':
          return <TankFarmModule onNavigateToUnit={(id) => { setSelectedUnitId(id); setActiveTab('units'); }} />;
-      case 'lims': 
+      case 'lims':
          return <LIMSModule />;
       default:
         return <Dashboard units={units} alerts={alerts} onSelectUnit={(id) => { setSelectedUnitId(id); setActiveTab('units'); }} onNavigate={setActiveTab} dataVersion={dataVersion} />;
