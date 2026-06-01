@@ -14,6 +14,8 @@ interface OptimizationResult {
   sensitivity: Record<string, number>;
 }
 
+type PricesMap = Record<string, number>;
+
 interface OptimizationModuleProps {
   isDay: boolean;
 }
@@ -44,7 +46,7 @@ const PRODUCT_COLORS: Record<string, string> = {
 export const OptimizationModule: React.FC<OptimizationModuleProps> = ({ isDay }) => {
   const [crudeFeed, setCrudeFeed] = useState(140000);
   const [objective, setObjective] = useState('max_margin');
-  const [prices, setPrices] = useState(DEFAULT_PRICES);
+  const [prices, setPrices] = useState<PricesMap>(DEFAULT_PRICES);
   const [result, setResult] = useState<OptimizationResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -93,7 +95,7 @@ export const OptimizationModule: React.FC<OptimizationModuleProps> = ({ isDay })
   const yieldChartData = result
     ? Object.entries(result.product_yields).map(([k, v]) => ({
         name: k.replace('_', ' ').replace(/\b\w/g, c => c.toUpperCase()),
-        value: Math.round(v),
+        value: Math.round(v as number),
         color: PRODUCT_COLORS[k] ?? '#6b7280',
       }))
     : [];
@@ -101,7 +103,7 @@ export const OptimizationModule: React.FC<OptimizationModuleProps> = ({ isDay })
   const allocChartData = result
     ? Object.entries(result.unit_allocations).map(([k, v]) => ({
         name: k.toUpperCase(),
-        value: Math.round(v),
+        value: Math.round(v as number),
       }))
     : [];
 
@@ -109,7 +111,7 @@ export const OptimizationModule: React.FC<OptimizationModuleProps> = ({ isDay })
     ? [
         { subject: 'GRM', value: Math.min(100, (result.gross_margin_usd / 20) * 100) },
         { subject: 'Throughput', value: Math.min(100, (crudeFeed / 140000) * 100) },
-        { subject: 'Yield', value: Math.min(100, Object.values(result.product_yields).reduce((a, b) => a + b, 0) / 140000 * 100) },
+        { subject: 'Yield', value: Math.min(100, (Object.values(result.product_yields) as number[]).reduce((a, b) => a + b, 0) / 140000 * 100) },
         { subject: 'Distillate', value: Math.min(100, ((result.product_yields.kerosene ?? 0) + (result.product_yields.diesel ?? 0)) / 56000 * 100) },
         { subject: 'Margin', value: Math.min(100, result.objective_value / 20 * 100) },
       ]
@@ -267,14 +269,17 @@ export const OptimizationModule: React.FC<OptimizationModuleProps> = ({ isDay })
             <div className={`rounded-xl p-4 border ${isD ? 'bg-black/20 border-white/10' : 'bg-gray-50 border-gray-200'}`}>
               <h3 className={`text-xs font-bold uppercase tracking-wide mb-3 ${subText}`}>Price Sensitivity ($/bbl GRM per $1 price change)</h3>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                {Object.entries(result.sensitivity).map(([k, v]) => (
-                  <div key={k} className={`rounded-lg p-2.5 ${isD ? 'bg-white/5' : 'bg-white'}`}>
-                    <div className={`text-[9px] uppercase tracking-wide ${subText}`}>{k.replace('_', ' ')}</div>
-                    <div className={`text-sm font-bold ${v > 0 ? 'text-green-400' : 'text-red-400'}`}>
-                      {v > 0 ? '+' : ''}{v.toFixed(3)}
+                {Object.entries(result.sensitivity).map(([k, v]) => {
+                  const sv = v as number;
+                  return (
+                    <div key={k} className={`rounded-lg p-2.5 ${isD ? 'bg-white/5' : 'bg-white'}`}>
+                      <div className={`text-[9px] uppercase tracking-wide ${subText}`}>{k.replace('_', ' ')}</div>
+                      <div className={`text-sm font-bold ${sv > 0 ? 'text-green-400' : 'text-red-400'}`}>
+                        {sv > 0 ? '+' : ''}{sv.toFixed(3)}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}

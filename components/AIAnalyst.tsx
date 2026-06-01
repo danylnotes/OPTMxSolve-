@@ -26,7 +26,7 @@ async function analyzeWithClaude(query: string, units: RefineryUnit[]): Promise<
       context: {
         timestamp: new Date().toISOString(),
         total_units: units.length,
-        operational_count: units.filter(u => u.status === 'operational').length,
+        operational_count: units.filter(u => u.status === 'Operational').length,
       },
     }),
   });

@@ -104,4 +104,18 @@ export const TankFarmModule: React.FC<TankFarmProps> = ({ onNavigateToUnit }) =>
                         </div>
                         {/* Connecting Line */}
                         <div className="h-16 w-1 bg-industrial-600 flex items-center justify-center">
-                            <ArrowRight className="text
+                            <ArrowRight className="text-white opacity-50 w-4 h-4" />
+                        </div>
+                    </div>
+                </div>
+            </Card>
+
+            {/* Tank inventory grid */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {filteredTanks.map(t => (
+                    <TankGraphic key={t.id} tank={t} onClick={() => onNavigateToUnit('CDU-01')} />
+                ))}
+            </div>
+        </div>
+    );
+};
