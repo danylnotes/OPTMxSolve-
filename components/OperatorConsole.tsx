@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { RefineryUnit, ChatMessage, Sensor } from '../types';
-import { runOperatorChat } from '../services/geminiService';
+import { runOperatorChat } from '../services/claudeService';
 import { updateSensorSetpoint } from '../services/mockDataService';
 import { Card } from './ui/Card';
 import { Radio, Send, Activity, Terminal, ChevronLeft, ChevronRight } from 'lucide-react';

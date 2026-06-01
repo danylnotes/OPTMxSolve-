@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Card } from './ui/Card';
 import { RefineryUnit } from '../types';
 import { Save, AlertCircle, CheckCircle, Database, ChevronRight, Sparkles, UserCircle, KeyRound, LogOut, Zap, Flame, Wind, Activity, Snowflake, Factory, Droplet, LayoutGrid, ChevronDown, CloudUpload, Upload, FileText, Loader2 } from 'lucide-react';
-import { parseNaturalLanguageLog, parseMultimodalData } from '../services/geminiService';
+import { parseNaturalLanguageLog, parseMultimodalData } from '../services/claudeService';
 import { getUtilityOverrides } from '../services/mockDataService';
 import { loggingService } from '../services/loggingService';
 

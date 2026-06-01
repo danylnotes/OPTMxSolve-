@@ -4,7 +4,7 @@ import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianG
 import { Activity, AlertOctagon, CheckCircle, Cpu, Thermometer, Wind, Waves, FlaskConical, Scale, Gauge } from 'lucide-react';
 import { RefineryUnit, UnitStatus } from '../types';
 import { Card } from './ui/Card';
-import { analyzeUnitStatus } from '../services/geminiService';
+import { analyzeUnitStatus } from '../services/claudeService';
 import { marked } from 'marked';
 
 interface UnitDetailProps {

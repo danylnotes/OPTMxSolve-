@@ -2,7 +2,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Send, Bot, User, Loader2, Sparkles, MoreVertical, Terminal } from 'lucide-react';
 import { RefineryUnit, ChatMessage } from '../types';
-import { chatWithDataStream } from '../services/geminiService';
+import { chatWithDataStream } from '../services/claudeService';
 
 interface AIAnalystProps {
   units: RefineryUnit[];
@@ -61,19 +61,12 @@ export const AIAnalyst: React.FC<AIAnalystProps> = ({ units }) => {
 
         const streamResponse = await chatWithDataStream(history, units);
 
-        if (!streamResponse) throw new Error("No response stream returned");
-
-        for await (const chunk of streamResponse) {
+        for await (const text of streamResponse) {
             if (!isMounted.current) break;
-            try {
-                const text = chunk.text;
-                if (text) {
-                    setMessages(prev => prev.map(msg => 
-                        msg.id === modelMsgId ? { ...msg, text: msg.text + text } : msg
-                    ));
-                }
-            } catch (err) {
-                console.warn("Skipped blocked/malformed chunk", err);
+            if (text) {
+                setMessages(prev => prev.map(msg =>
+                    msg.id === modelMsgId ? { ...msg, text: msg.text + text } : msg
+                ));
             }
         }
     } catch (e: any) {
@@ -104,7 +97,7 @@ export const AIAnalyst: React.FC<AIAnalystProps> = ({ units }) => {
                   <Bot className={`w-6 h-6 ${isDay ? 'text-brand-sky' : 'text-neon-blue'}`} />
               </div>
               <div className="flex flex-col">
-                  <span className={`font-bold text-base ${isDay ? 'text-slate-800' : 'text-white'}`}>Gemini Operational Core</span>
+                  <span className={`font-bold text-base ${isDay ? 'text-slate-800' : 'text-white'}`}>Claude Intelligence Core</span>
                   <span className={`text-[10px] uppercase tracking-widest font-bold flex items-center gap-1 ${isDay ? 'text-emerald-600' : 'text-neon-green'}`}>
                     <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse"></span> Online
                   </span>
@@ -169,7 +162,7 @@ export const AIAnalyst: React.FC<AIAnalystProps> = ({ units }) => {
                 value={inputValue}
                 onChange={(e) => setInputValue(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
-                placeholder="Ask Gemini about plant status, anomalies, or optimization..."
+                placeholder="Ask Claude about plant status, anomalies, or optimization..."
                 className={`flex-1 bg-transparent px-4 py-2 focus:outline-none text-sm ${isDay ? 'text-slate-800 placeholder-slate-400' : 'text-white placeholder-gray-500'}`}
             />
             <button
