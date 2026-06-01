@@ -3,7 +3,7 @@ import React from 'react';
 import {
   LayoutDashboard, Activity, Settings, Zap,
   Droplet, CircleDollarSign, ShieldCheck, User,
-  Database, PlayCircle, LogOut, MessageSquare, FileText, Fingerprint
+  Database, PlayCircle, LogOut, MessageSquare, FileText, Fingerprint, FlaskConical, Waves
 } from 'lucide-react';
 import { Logo } from './Logo';
 
@@ -19,17 +19,19 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, user,
   const isDay = theme === 'light';
 
   const menuItems = [
-    { id: 'dashboard', label: 'Overview', icon: LayoutDashboard },
-    { id: 'units', label: 'Process Units', icon: Droplet },
-    { id: 'analytics', label: 'Refinery AI', icon: MessageSquare },
-    { id: 'ops-entry', label: 'Ops Data', icon: Database },
-    { id: 'logging', label: 'Data Logging', icon: FileText },
-    { id: 'energy', label: 'Energy', icon: Zap },
-    { id: 'economics', label: 'Economics', icon: CircleDollarSign },
-    { id: 'risk', label: 'Reliability', icon: ShieldCheck },
-    { id: 'sim', label: 'Simulation', icon: PlayCircle },
-    { id: 'aosp-os', label: 'Decision OS', icon: Fingerprint },
-    { id: 'settings', label: 'Settings', icon: Settings },
+    { id: 'dashboard',  label: 'Overview',       icon: LayoutDashboard },
+    { id: 'units',      label: 'Process Units',   icon: Droplet },
+    { id: 'analytics',  label: 'Refinery AI',     icon: MessageSquare },
+    { id: 'ops-entry',  label: 'Ops Data',        icon: Database },
+    { id: 'logging',    label: 'Data Logging',    icon: FileText },
+    { id: 'energy',     label: 'Energy',          icon: Zap },
+    { id: 'economics',  label: 'Economics',       icon: CircleDollarSign },
+    { id: 'blending',   label: 'Product Blending',icon: FlaskConical },
+    { id: 'tank-farm',  label: 'Tank Farm',       icon: Waves },
+    { id: 'risk',       label: 'Reliability',     icon: ShieldCheck },
+    { id: 'sim',        label: 'Simulation',      icon: PlayCircle },
+    { id: 'aosp-os',    label: 'Decision OS',     icon: Fingerprint },
+    { id: 'settings',   label: 'Settings',        icon: Settings },
   ];
 
   // Role-Based Access Control (RBAC) Logic

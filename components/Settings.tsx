@@ -1,8 +1,9 @@
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card } from './ui/Card';
-import { Moon, Sun, Monitor, Check } from 'lucide-react';
+import { Moon, Sun, Monitor, Check, Key, Eye, EyeOff, Save, Trash2 } from 'lucide-react';
 import { RefineryUnit } from '../types';
+import { storageService } from '../services/storageService';
 
 interface SettingsProps {
   units: RefineryUnit[];
@@ -13,6 +14,19 @@ interface SettingsProps {
 export const Settings: React.FC<SettingsProps> = ({ units, onImportData, onThemeChange }) => {
   const currentTheme = document.documentElement.getAttribute('data-theme') || 'light';
   const isDay = currentTheme === 'light';
+  const [apiKey, setApiKey] = useState('');
+  const [showKey, setShowKey] = useState(false);
+  const [savedKey, setSavedKey] = useState(false);
+
+  useEffect(() => {
+    setApiKey(storageService.loadApiKey());
+  }, []);
+
+  const handleSaveKey = () => {
+    storageService.saveApiKey(apiKey.trim());
+    setSavedKey(true);
+    setTimeout(() => setSavedKey(false), 2000);
+  };
 
   const setTheme = (theme: string) => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -71,6 +85,57 @@ export const Settings: React.FC<SettingsProps> = ({ units, onImportData, onTheme
                 <Monitor className="w-7 h-7 text-slate-400" />
                 <span className="text-sm font-black uppercase tracking-widest text-slate-400">Auto Sync</span>
             </button>
+        </div>
+      </Card>
+
+      <Card title="Claude AI Configuration">
+        <div className="space-y-4">
+          <p className={`text-sm ${isDay ? 'text-slate-600' : 'text-gray-400'}`}>
+            Enter your Anthropic API key to enable the AI Analyst, predictive maintenance, and operator chat features.
+          </p>
+          <div className="relative">
+            <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none">
+              <Key className={`w-4 h-4 ${isDay ? 'text-slate-400' : 'text-gray-500'}`} />
+            </div>
+            <input
+              type={showKey ? 'text' : 'password'}
+              value={apiKey}
+              onChange={e => setApiKey(e.target.value)}
+              placeholder="sk-ant-..."
+              className={`w-full pl-10 pr-24 py-3 rounded-xl border font-mono text-sm focus:outline-none focus:ring-2 transition-all ${
+                isDay
+                  ? 'bg-white border-slate-200 text-slate-800 focus:border-brand-sky focus:ring-sky-100'
+                  : 'bg-black/20 border-white/10 text-white focus:border-neon-blue focus:ring-neon-blue/20'
+              }`}
+            />
+            <div className="absolute inset-y-0 right-3 flex items-center gap-2">
+              <button onClick={() => setShowKey(s => !s)} className={`p-1 rounded ${isDay ? 'text-slate-400 hover:text-slate-700' : 'text-gray-500 hover:text-white'}`}>
+                {showKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+          <div className="flex gap-3">
+            <button
+              onClick={handleSaveKey}
+              className={`flex-1 py-2.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all ${
+                savedKey
+                  ? (isDay ? 'bg-emerald-500 text-white' : 'bg-neon-green text-black')
+                  : (isDay ? 'bg-brand-sky text-white hover:bg-sky-600' : 'bg-neon-blue text-white hover:bg-blue-600')
+              }`}
+            >
+              <Save className="w-4 h-4" />
+              {savedKey ? 'Saved!' : 'Save API Key'}
+            </button>
+            <button
+              onClick={() => { storageService.clearAll(); setApiKey(''); }}
+              className={`px-4 py-2.5 rounded-xl font-bold text-sm flex items-center gap-2 transition-all ${isDay ? 'bg-slate-100 text-slate-600 hover:bg-red-50 hover:text-red-600' : 'bg-white/5 text-gray-400 hover:bg-neon-red/10 hover:text-neon-red'}`}
+            >
+              <Trash2 className="w-4 h-4" /> Clear
+            </button>
+          </div>
+          <p className={`text-[10px] ${isDay ? 'text-slate-400' : 'text-gray-600'}`}>
+            Key is stored in browser localStorage. Never sent to any server other than api.anthropic.com.
+          </p>
         </div>
       </Card>
 

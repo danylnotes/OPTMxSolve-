@@ -19,6 +19,8 @@ import { Menu, KeyRound, LogIn, AlertTriangle, ShieldCheck, Gauge, Layers, Wrenc
 import { LIMSModule } from './components/LIMSModule';
 import { ExportModule } from './components/ExportModule';
 import { AOSPDecisionOS } from './components/AOSPDecisionOS';
+import { BlendingModule } from './components/BlendingModule';
+import { storageService } from './services/storageService';
 
 const STAFF_REGISTRY: Record<string, { name: string, role: string }> = {
   "MD001": { name: "Kwame Mensah", role: "Managing Director" },
@@ -89,13 +91,22 @@ const App: React.FC = () => {
   useEffect(() => {
     const { units: initialUnits, alerts: initialAlerts } = generateInitialState();
     setUnits(initialUnits);
-    setAlerts(initialAlerts);
+    // Merge persisted alerts with fresh ones (Firebase fallback: localStorage)
+    const persisted = storageService.loadAlerts();
+    const merged = [...initialAlerts, ...persisted]
+      .filter((a, i, arr) => arr.findIndex(b => b.id === a.id) === i)
+      .slice(0, 50);
+    setAlerts(merged);
 
     const interval = setInterval(() => {
       setUnits(prevUnits => {
         const { units: updatedUnits, newAlerts } = updateReadings(prevUnits);
         if (newAlerts.length > 0) {
-          setAlerts(prev => [...newAlerts, ...prev].slice(0, 50));
+          setAlerts(prev => {
+            const next = [...newAlerts, ...prev].slice(0, 50);
+            storageService.saveAlerts(next);
+            return next;
+          });
         }
         return updatedUnits;
       });
@@ -305,6 +316,8 @@ const App: React.FC = () => {
         return <SimulationModule user={user} />;
       case 'aosp-os':
         return <AOSPDecisionOS />;
+      case 'blending':
+        return <BlendingModule />;
       case 'risk':
         return <RiskReliabilityModule />;
       case 'settings':
