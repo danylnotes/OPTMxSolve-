@@ -18,3 +18,9 @@ View your app in AI Studio: https://ai.studio/apps/drive/1m6fRb20NeyKUqBk9ywuxHy
 2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
 3. Run the app:
    `npm run dev`
+
+---
+
+## APEX Learning & Development platform
+
+The enterprise learning, competency and career-development platform lives in [`apex-lms/`](apex-lms/README.md) — a Next.js + PostgreSQL application with its own setup, testing and deployment documentation.
