@@ -117,16 +117,22 @@ async function crawlPersona(browser, p) {
 }
 
 function demoChrome(p) {
-  return `
+  return `<!--demo-chrome-->
 <style>
-#demo-bar{position:sticky;top:0;z-index:60;display:flex;flex-wrap:wrap;gap:6px 16px;align-items:center;justify-content:center;padding:7px max(16px,env(safe-area-inset-right,0px)) 7px max(16px,env(safe-area-inset-left,0px));background:#a66234;color:#fff;font:500 12.5px/1.4 Inter,system-ui,sans-serif;text-align:center}
+:root{--demo-h:34px}
+body{padding-top:var(--demo-h)}
+#demo-bar{position:fixed;top:0;left:0;right:0;height:var(--demo-h);z-index:60;display:flex;gap:14px;align-items:center;justify-content:center;padding:0 max(12px,env(safe-area-inset-right,0px)) 0 max(56px,env(safe-area-inset-left,0px));background:#a66234;color:#fff;font:500 12.5px/1 Inter,system-ui,sans-serif;white-space:nowrap;overflow:hidden}
 #demo-bar a{color:#fff;text-decoration:underline;text-underline-offset:2px}
-#demo-toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:70;max-width:min(92vw,520px);padding:12px 16px;border-radius:6px;background:#162644;color:#fff;font:14px/1.45 Inter,system-ui,sans-serif;box-shadow:0 8px 24px rgb(16 24 40/.25)}
+#demo-bar .long{overflow:hidden;text-overflow:ellipsis}
+@media (max-width:640px){#demo-bar .wide{display:none}}
+aside.fixed.bg-navy{top:var(--demo-h)}
+button[aria-controls="mobile-nav"]{top:calc(var(--demo-h) + 8px)!important}
+header.sticky{top:var(--demo-h)!important}
+#demo-toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:70;width:max-content;max-width:min(92vw,520px);padding:12px 16px;border-radius:6px;background:#162644;color:#fff;font:14px/1.45 Inter,system-ui,sans-serif;box-shadow:0 8px 24px rgb(16 24 40/.25)}
 #demo-toast[hidden]{display:none}
-body.demo-nav-open aside.bg-navy.fixed{display:flex!important;z-index:35;box-shadow:0 8px 24px rgb(16 24 40/.3)}
-header.sticky{top:34px}
+body.demo-nav-open aside.bg-navy.fixed{display:flex!important;z-index:35;padding-top:44px;box-shadow:0 8px 24px rgb(16 24 40/.3)}
 </style>
-<div id="demo-bar" role="note">Read-only demonstration · viewing as <b>${p.name}</b> (${p.role}) · <a href="../../index.html">Switch persona</a> · <a href="${REPO_URL}" target="_blank" rel="noopener">Source and full app</a></div>
+<div id="demo-bar" role="note"><span class="long">Read-only demo · <b>${p.name}</b><span class="wide"> (${p.role})</span></span><a href="../../index.html">Switch persona</a><a class="wide" href="${REPO_URL}" target="_blank" rel="noopener">Source</a></div>
 <div id="demo-toast" role="status" hidden></div>
 <script>
 (function(){
@@ -140,10 +146,10 @@ header.sticky{top:34px}
   },true);
   document.addEventListener('click',function(e){
     var b=e.target.closest&&e.target.closest('button[aria-controls="mobile-nav"]');
-    if(b){document.body.classList.toggle('demo-nav-open');b.setAttribute('aria-expanded',document.body.classList.contains('demo-nav-open'));}
+    if(b){var o=document.body.classList.toggle('demo-nav-open');b.setAttribute('aria-expanded',o);}
   });
 })();
-</script>`;
+</script><!--/demo-chrome-->`;
 }
 
 function rewrite(html, p, pageSlugs, files) {

@@ -24,3 +24,5 @@ View your app in AI Studio: https://ai.studio/apps/drive/1m6fRb20NeyKUqBk9ywuxHy
 ## APEX Learning & Development platform
 
 The enterprise learning, competency and career-development platform lives in [`apex-lms/`](apex-lms/README.md) — a Next.js + PostgreSQL application with its own setup, testing and deployment documentation.
+
+**Live read-only demo (GitHub Pages):** https://danylnotes.github.io/OPTMxSolve-/ — static snapshots of the app for eight fictional personas. See [`apex-lms/docs/HOSTING.md`](apex-lms/docs/HOSTING.md) for how it is built and how to host the full application.
