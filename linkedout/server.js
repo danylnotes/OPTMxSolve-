@@ -4,7 +4,8 @@ import { readFile } from 'node:fs/promises';
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { extname, join, normalize, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { Store, toPublic } from './lib/store.js';
+import { Store } from './lib/store.js';
+import { validateUsername, validatePassword, hashPassword, verifyPassword, newSessionToken, hashToken, USERNAME_RULES, PASSWORD_RULES } from './lib/auth.js';
 import { createAnalyzer, heuristicAnalyze } from './lib/analyzer.js';
 import { validateStory, REASONS, TENURES, LIMITS, REPORT_REASONS } from './lib/validate.js';
 
@@ -48,6 +49,8 @@ export function createApp({
   adminToken = process.env.ADMIN_TOKEN || '',
   postLimit = rateLimiter({ limit: 5, windowMs: 60 * 60 * 1000 }),
   actionLimit = rateLimiter({ limit: 120, windowMs: 60 * 1000 }),
+  signupLimit = rateLimiter({ limit: 5, windowMs: 60 * 60 * 1000 }),
+  loginLimit = rateLimiter({ limit: 10, windowMs: 15 * 60 * 1000 }),
 } = {}) {
   const hash = (v) => createHmac('sha256', secret).update(String(v)).digest('hex').slice(0, 32);
 
@@ -91,18 +94,28 @@ export function createApp({
         .map(([k, v]) => [k, decodeURIComponent(v)]),
     );
 
-  /** Anonymous, per-browser voter id. Only its HMAC is ever stored. */
-  const voterFor = (req, res) => {
-    let raw = cookies(req).lo_v;
-    if (!raw || !/^[a-f0-9]{32}$/.test(raw)) {
-      raw = randomBytes(16).toString('hex');
-      res.setHeader(
-        'Set-Cookie',
-        `lo_v=${raw}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${60 * 60 * 24 * 365}`,
-      );
-    }
-    return hash(`v:${raw}`);
+  const SESSION_COOKIE = 'lo_s';
+  const SESSION_MAX_AGE = 30 * 24 * 3600;
+  const cookieFlags = (req) =>
+    `Path=/; HttpOnly; SameSite=Lax${process.env.COOKIE_SECURE === '1' || req.headers['x-forwarded-proto'] === 'https' ? '; Secure' : ''}`;
+
+  /** The logged-in user for this request, or null. */
+  const currentUser = (req) => {
+    const token = cookies(req)[SESSION_COOKIE];
+    return token ? store.sessionUser(hashToken(token)) : null;
   };
+  const requireUser = (req) => {
+    const u = currentUser(req);
+    if (!u) throw new HttpError(401, 'Log in to do that.');
+    return u;
+  };
+  const startSession = (req, res, user) => {
+    const token = newSessionToken();
+    store.createSession(user.id, hashToken(token));
+    res.setHeader('Set-Cookie', `${SESSION_COOKIE}=${token}; ${cookieFlags(req)}; Max-Age=${SESSION_MAX_AGE}`);
+  };
+  const me = (u) => (u ? { username: u.username } : null);
+
   const clientKey = (req) => hash(`ip:${req.socket.remoteAddress}`);
 
   const isAdmin = (req) => {
@@ -146,13 +159,60 @@ export function createApp({
     if (method !== 'GET' && !actionLimit(clientKey(req))) throw new HttpError(429, 'Slow down a little.');
 
     if (method === 'GET' && pathname === '/api/meta') {
-      return send(res, 200, { reasons: REASONS, tenures: TENURES, reportReasons: REPORT_REASONS, limits: LIMITS });
+      return send(res, 200, {
+        reasons: REASONS, tenures: TENURES, reportReasons: REPORT_REASONS,
+        limits: { ...LIMITS, username: USERNAME_RULES, password: PASSWORD_RULES },
+      });
+    }
+
+    // --- accounts (username + password; no email) ---
+    if (method === 'GET' && pathname === '/api/auth/me') return send(res, 200, { user: me(currentUser(req)) });
+
+    if (method === 'POST' && pathname === '/api/auth/register') {
+      if (!signupLimit(clientKey(req))) throw new HttpError(429, 'Too many sign-ups from here. Try again later.');
+      const body = await readJson(req);
+      const un = validateUsername(body.username);
+      const pw = validatePassword(body.password);
+      if (!un.ok || !pw.ok) throw new HttpError(422, 'Please fix the highlighted fields.', { errors: { ...(un.ok ? {} : { username: un.error }), ...(pw.ok ? {} : { password: pw.error }) } });
+      if (store.userByName(un.value)) throw new HttpError(409, 'That username is taken.', { errors: { username: 'That username is taken.' } });
+      const user = store.createUser({ username: un.value, passHash: await hashPassword(pw.value) });
+      if (!user) throw new HttpError(409, 'That username is taken.', { errors: { username: 'That username is taken.' } });
+      startSession(req, res, user);
+      return send(res, 201, { user: me(user) });
+    }
+
+    if (method === 'POST' && pathname === '/api/auth/login') {
+      const body = await readJson(req);
+      const username = typeof body.username === 'string' ? body.username.trim().toLowerCase() : '';
+      if (!loginLimit(`${clientKey(req)}:${username}`)) throw new HttpError(429, 'Too many login attempts. Try again in a few minutes.');
+      const user = store.userByName(username);
+      const ok = await verifyPassword(typeof body.password === 'string' ? body.password : '', user?.passHash);
+      if (!user || !ok || user.banned) throw new HttpError(401, 'Wrong username or password.');
+      startSession(req, res, user);
+      return send(res, 200, { user: me(user) });
+    }
+
+    if (method === 'POST' && pathname === '/api/auth/logout') {
+      const token = cookies(req)[SESSION_COOKIE];
+      if (token) store.deleteSession(hashToken(token));
+      res.setHeader('Set-Cookie', `${SESSION_COOKIE}=; ${cookieFlags(req)}; Max-Age=0`);
+      return send(res, 200, { ok: true });
+    }
+
+    if (method === 'GET' && (p = m(/^\/api\/users\/(\w+)$/))) {
+      const u = store.userByName(p[1]);
+      if (!u || u.banned) throw new HttpError(404, 'No such user.');
+      const viewer = currentUser(req)?.id;
+      return send(res, 200, {
+        user: { username: u.username, joined: u.createdAt.slice(0, 7) },
+        items: store.userStories(u.id).map((st) => store.present(st, viewer)),
+      });
     }
 
     if (method === 'GET' && pathname === '/api/stats') return send(res, 200, store.globalStats());
 
     if (method === 'GET' && pathname === '/api/stories') {
-      const voter = voterFor(req, res);
+      const viewer = currentUser(req)?.id;
       const limit = Math.min(50, Math.max(1, parseInt(qs.get('limit') || '20', 10) || 20));
       const offset = Math.max(0, parseInt(qs.get('offset') || '0', 10) || 0);
       const { total, items } = store.list({
@@ -163,47 +223,47 @@ export function createApp({
         limit,
         offset,
       });
-      return send(res, 200, { total, offset, limit, items: items.map((s) => toPublic(s, voter)) });
+      return send(res, 200, { total, offset, limit, items: items.map((s) => store.present(s, viewer)) });
     }
 
     if (method === 'POST' && pathname === '/api/stories') {
-      if (!postLimit(clientKey(req))) throw new HttpError(429, 'You have posted a lot recently. Try again later.');
-      const result = validateStory(await readJson(req));
+      const user = requireUser(req);
+      if (!postLimit(user.id)) throw new HttpError(429, 'You have posted a lot recently. Try again later.');
+      const body = await readJson(req);
+      const result = validateStory(body);
       if (!result.ok) throw new HttpError(422, 'Please fix the highlighted fields.', { errors: result.errors });
-      const deleteToken = randomBytes(18).toString('base64url');
       // Publish immediately with a fast offline analysis, then upgrade it with the
       // model in the background so posting never waits on an API call.
       const story = store.create(result.value, {
-        deleteTokenHash: hash(`d:${deleteToken}`),
+        userId: user.id,
+        anonymous: body.anonymous === true,
         analysis: heuristicAnalyze(result.value.story),
       });
       analyzeInBackground(story.id, result.value.story);
-      return send(res, 201, {
-        story: toPublic(story, voterFor(req, res)),
-        deleteToken,
-        redactedCount: result.redactedCount,
-      });
+      return send(res, 201, { story: store.present(story, user.id), redactedCount: result.redactedCount });
     }
 
     if ((p = m(/^\/api\/stories\/([\w-]+)$/))) {
-      if (method === 'GET') return send(res, 200, { story: toPublic(requireStory(p[1]), voterFor(req, res)) });
+      if (method === 'GET') return send(res, 200, { story: store.present(requireStory(p[1]), currentUser(req)?.id) });
       if (method === 'DELETE') {
-        const token = req.headers['x-delete-token'] || '';
-        if (!store.deleteByAuthor(p[1], hash(`d:${token}`))) throw new HttpError(403, 'Invalid delete token.');
+        const user = requireUser(req);
+        if (!store.deleteByAuthor(p[1], user.id)) throw new HttpError(403, 'You can only delete your own posts.');
         return send(res, 200, { ok: true });
       }
     }
 
     if (method === 'POST' && (p = m(/^\/api\/stories\/([\w-]+)\/relate$/))) {
+      const user = requireUser(req);
       requireStory(p[1]);
-      return send(res, 200, store.toggleRelate(p[1], voterFor(req, res)));
+      return send(res, 200, store.toggleRelate(p[1], user.id));
     }
 
     if (method === 'POST' && (p = m(/^\/api\/stories\/([\w-]+)\/report$/))) {
+      const user = requireUser(req);
       requireStory(p[1]);
       const { reason } = await readJson(req);
       if (!(reason in REPORT_REASONS)) throw new HttpError(422, 'Pick a report reason.');
-      store.report(p[1], voterFor(req, res), reason);
+      store.report(p[1], user.id, reason);
       return send(res, 200, { ok: true });
     }
 
@@ -225,11 +285,18 @@ export function createApp({
       if (method === 'GET' && pathname === '/api/admin/queue') {
         return send(res, 200, {
           items: store.moderationQueue().map((s) => ({
-            ...toPublic(s),
+            ...store.present(s),
+            // Moderators see the account even when the post hides it.
+            account: store.userById(s.userId)?.username ?? null,
             status: s.status,
             reports: s.reports.map(({ reason, at }) => ({ reason, at })),
           })),
         });
+      }
+      if (method === 'POST' && (p = m(/^\/api\/admin\/users\/(\w+)\/ban$/))) {
+        const r = store.banUser(p[1]);
+        if (!r) throw new HttpError(404, 'No such user.');
+        return send(res, 200, r);
       }
       if (method === 'POST' && (p = m(/^\/api\/admin\/stories\/([\w-]+)$/))) {
         const { action } = await readJson(req);
@@ -286,7 +353,6 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const port = Number(process.env.PORT) || 3000;
   const store = new Store(process.env.DATA_FILE || join(ROOT, 'data', 'linkedout.json'));
   if (!process.env.ADMIN_TOKEN) console.warn('ADMIN_TOKEN not set: moderation API is disabled.');
-  if (!process.env.LINKEDOUT_SECRET) console.warn('LINKEDOUT_SECRET not set: using a random secret (votes/delete tokens reset on restart).');
   const app = createApp({ store });
   app.backfill();
   console.log(`Post analysis: ${process.env.ANTHROPIC_API_KEY ? 'Claude' : 'keyword heuristic (set ANTHROPIC_API_KEY for Claude)'}`);

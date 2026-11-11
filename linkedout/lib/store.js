@@ -4,16 +4,19 @@ import { readFileSync, writeFileSync, renameSync, existsSync, mkdirSync } from '
 import { dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { REASONS } from './validate.js';
+import { usernameKey } from './auth.js';
 
 export const AUTO_HIDE_REPORTS = 3;
 
 export class Store {
   constructor(file) {
     this.file = file;
-    this.data = { stories: [] };
+    this.data = { stories: [], users: [], sessions: {} };
     if (file && existsSync(file)) {
       this.data = JSON.parse(readFileSync(file, 'utf8'));
       this.data.stories ??= [];
+      this.data.users ??= [];
+      this.data.sessions ??= {};
     }
   }
 
@@ -25,7 +28,7 @@ export class Store {
     renameSync(tmp, this.file);
   }
 
-  create(value, { now = Date.now(), deleteTokenHash = null, analysis = null } = {}) {
+  create(value, { now = Date.now(), userId = null, anonymous = false, analysis = null } = {}) {
     const story = {
       id: randomUUID(),
       title: '',
@@ -33,9 +36,10 @@ export class Store {
       rating: 3,
       reasons: [],
       ...value,
-      deleteTokenHash,
+      userId, // account that owns the post (null for legacy posts)
+      anonymous: Boolean(anonymous), // hide the username publicly
       createdAt: new Date(now).toISOString(),
-      relates: [], // anonymous voter tokens (hashed)
+      relates: [], // ids of users who relate
       reports: [], // { voter, reason, at }
       status: 'visible', // visible | hidden | removed
     };
@@ -121,12 +125,101 @@ export class Store {
     return s;
   }
 
-  /** Author self-delete (proved by the token they got at creation). */
-  deleteByAuthor(id, tokenHash) {
+  /** Owner self-delete. */
+  deleteByAuthor(id, userId) {
     const s = this.get(id);
-    if (!s || s.status === 'removed' || !s.deleteTokenHash || s.deleteTokenHash !== tokenHash) return false;
+    if (!s || s.status === 'removed' || !userId || s.userId !== userId) return false;
     this.moderate(id, 'remove');
     return true;
+  }
+
+  // ---- accounts ----
+  createUser({ username, passHash }, { now = Date.now() } = {}) {
+    if (this.userByName(username)) return null;
+    const user = { id: randomUUID(), username, usernameKey: usernameKey(username), passHash, createdAt: new Date(now).toISOString(), banned: false };
+    this.data.users.push(user);
+    this.#save();
+    return user;
+  }
+
+  userByName(name) {
+    const k = usernameKey(name);
+    return this.data.users.find((u) => u.usernameKey === k) ?? null;
+  }
+
+  userById(id) {
+    return this.data.users.find((u) => u.id === id) ?? null;
+  }
+
+  createSession(userId, tokenHash, { now = Date.now(), ttlMs = 30 * 24 * 3600 * 1000 } = {}) {
+    for (const [h, v] of Object.entries(this.data.sessions)) if (v.expiresAt <= now) delete this.data.sessions[h];
+    this.data.sessions[tokenHash] = { userId, expiresAt: now + ttlMs };
+    this.#save();
+  }
+
+  /** The (non-banned) user for a session token hash, or null. */
+  sessionUser(tokenHash, { now = Date.now() } = {}) {
+    const sess = this.data.sessions[tokenHash];
+    if (!sess) return null;
+    if (sess.expiresAt <= now) return null;
+    const u = this.userById(sess.userId);
+    return u && !u.banned ? u : null;
+  }
+
+  deleteSession(tokenHash) {
+    if (this.data.sessions[tokenHash]) {
+      delete this.data.sessions[tokenHash];
+      this.#save();
+    }
+  }
+
+  /** Ban an account: ends its sessions and hides everything it posted. */
+  banUser(username) {
+    const u = this.userByName(username);
+    if (!u) return null;
+    u.banned = true;
+    for (const [h, v] of Object.entries(this.data.sessions)) if (v.userId === u.id) delete this.data.sessions[h];
+    let hidden = 0;
+    for (const st of this.data.stories) {
+      if (st.userId === u.id && st.status === 'visible') { st.status = 'hidden'; hidden++; }
+    }
+    this.#save();
+    return { username: u.username, hidden };
+  }
+
+  /** Public, non-anonymous posts by one user (for profile pages). */
+  userStories(userId, { limit = 50 } = {}) {
+    return this.data.stories
+      .filter((s) => s.userId === userId && s.status === 'visible' && !s.anonymous)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .slice(0, limit);
+  }
+
+  /**
+   * Shape a story for the public. `viewerId` (the logged-in user, if any) decides
+   * `related` and `mine`. The author's username is only exposed on non-anonymous posts.
+   */
+  present(s, viewerId = null) {
+    const author = s.userId && !s.anonymous ? this.userById(s.userId)?.username ?? null : null;
+    return {
+      id: s.id,
+      author,
+      mine: Boolean(viewerId && s.userId === viewerId),
+      company: s.company,
+      companySlug: s.companySlug,
+      role: s.role,
+      title: s.title,
+      story: s.story,
+      advice: s.advice,
+      tenure: s.tenure,
+      rating: s.rating,
+      reasons: s.reasons,
+      aiSource: s.analysis?.source ?? null,
+      // Day precision only: exact timestamps make it easier to link posts together.
+      createdAt: s.createdAt.slice(0, 10),
+      relates: s.relates.length,
+      related: viewerId ? s.relates.includes(viewerId) : false,
+    };
   }
 
   moderationQueue() {
@@ -256,25 +349,4 @@ export class Store {
         .map(([key, count]) => ({ key, label: REASONS[key], count })),
     };
   }
-}
-
-/** Strip internal fields before sending a story to the public. */
-export function toPublic(s, voter) {
-  return {
-    id: s.id,
-    company: s.company,
-    companySlug: s.companySlug,
-    role: s.role,
-    title: s.title,
-    story: s.story,
-    advice: s.advice,
-    tenure: s.tenure,
-    rating: s.rating,
-    reasons: s.reasons,
-    aiSource: s.analysis?.source ?? null,
-    // Day precision only: exact timestamps make it easier to unmask authors.
-    createdAt: s.createdAt.slice(0, 10),
-    relates: s.relates.length,
-    related: voter ? s.relates.includes(voter) : false,
-  };
 }

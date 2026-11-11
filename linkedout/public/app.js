@@ -3,6 +3,7 @@
 
 const app = document.getElementById('app');
 let META = null;
+let ME = null; // logged-in user: { username } or null
 
 // ---------- helpers ----------
 function h(tag, attrs = {}, ...children) {
@@ -40,6 +41,26 @@ async function api(path, { method = 'GET', body, headers = {} } = {}) {
 }
 
 let toastTimer;
+/** Send the user to log in, remembering where they were. */
+function needLogin(msg = 'Log in to do that.') {
+  toast(msg);
+  location.hash = `#/login?next=${encodeURIComponent(location.hash.replace(/^#/, '') || '/')}`;
+}
+
+function paintAuth() {
+  const slot = document.getElementById('auth-slot');
+  if (!slot) return;
+  fill(slot, ME
+    ? [h('a', { href: `#/user/${ME.username}`, 'data-nav': 'me', class: 'me-link' }, `@${ME.username}`),
+       h('button', { class: 'linklike', type: 'button', onclick: logout }, 'Log out')]
+    : [h('a', { href: '#/login', 'data-nav': 'login' }, 'Log in')]);
+}
+
+async function logout() {
+  await api('/api/auth/logout', { method: 'POST' }).catch(() => {});
+  ME = null; paintAuth(); toast('Logged out.'); location.hash = '#/';
+}
+
 function toast(msg) {
   const t = document.getElementById('toast');
   t.textContent = msg;
@@ -87,7 +108,7 @@ function relateButton(s) {
       s.related = r.related;
       s.relates = r.count;
       paint();
-    } catch (e) { toast(e.message); }
+    } catch (e) { if (e.status === 401) needLogin('Log in to say you relate.'); else toast(e.message); }
     btn.disabled = false;
   });
   return btn;
@@ -96,12 +117,14 @@ function relateButton(s) {
 function reportButton(s, onReported) {
   return h('button', {
     class: 'btn btn-ghost small', type: 'button',
-    onclick: () => openReportDialog(s, onReported),
+    onclick: () => (ME ? openReportDialog(s, onReported) : needLogin('Log in to report a post.')),
   }, '⚑ Report');
 }
 
 function storyMeta(s) {
   return h('div', { class: 'meta' },
+    s.author ? h('a', { class: 'author', href: `#/user/${s.author}` }, `@${s.author}`) : h('span', { class: 'author anon' }, 'Anonymous'),
+    h('span', {}, '·'),
     h('a', { href: `#/company/${s.companySlug}` }, s.company),
     s.role && h('span', {}, s.role),
     s.tenure && h('span', {}, META.tenures[s.tenure]),
@@ -233,8 +256,6 @@ async function storyView(id) {
   setNav('feed');
   const { story: s } = await api(`/api/stories/${id}`);
   document.title = `${s.title} — LinkedOut`;
-  const mine = store.get('lo_mine', {});
-  const deleteToken = mine[s.id];
 
   fill(app,
     h('a', { class: 'back', href: '#/' }, '← All stories'),
@@ -248,18 +269,17 @@ async function storyView(id) {
         relateButton(s),
         h('a', { class: 'btn btn-ghost', href: `#/company/${s.companySlug}` }, `More about ${s.company}`),
         reportButton(s, () => { location.hash = '#/'; }),
-        deleteToken && h('button', {
+        s.mine && h('button', {
           class: 'btn btn-ghost btn-danger', type: 'button',
           onclick: async () => {
-            if (!confirm('Delete your story permanently?')) return;
+            if (!confirm('Delete your post permanently?')) return;
             try {
-              await api(`/api/stories/${s.id}`, { method: 'DELETE', headers: { 'X-Delete-Token': deleteToken } });
-              delete mine[s.id]; store.set('lo_mine', mine);
-              toast('Your story was deleted.');
+              await api(`/api/stories/${s.id}`, { method: 'DELETE' });
+              toast('Your post was deleted.');
               location.hash = '#/';
             } catch (e) { toast(e.message); }
           },
-        }, 'Delete my story'),
+        }, 'Delete my post'),
       ),
     ),
   );
@@ -347,11 +367,13 @@ function guidelinesView() {
       h('li', {}, 'State things as fact that you don\'t know to be true. Frame opinions as opinions.'),
       h('li', {}, 'Share confidential business information or trade secrets.'),
       h('li', {}, 'Post hate, threats, or harassment.')),
-    h('h2', {}, 'Protecting your anonymity'),
+    h('h2', {}, 'Your username and privacy'),
     h('ul', {},
-      h('li', {}, 'We don\'t collect names, emails, or store IP addresses. Dates are shown by month only.'),
-      h('li', {}, 'Small details (exact dates, team names, unique projects) can still identify you. Leave them out if you\'re worried.'),
-      h('li', {}, 'After posting you get a private delete key. Keep it to remove your story later.')),
+      h('li', {}, 'Accounts are just a username and password. We never ask for your real name or email, and we don\'t store IP addresses.'),
+      h('li', {}, 'Pick a username that isn\'t your real name or used elsewhere. Posts show your username, and your profile lists your posts.'),
+      h('li', {}, 'Want to post something without your username? Tick "Hide my username on this post". It stays out of the feed and your profile, but you can still delete it.'),
+      h('li', {}, 'There is no email, so we can\'t reset a forgotten password. Use a password manager.'),
+      h('li', {}, 'Small details (exact dates, team names, unique projects) can still identify you. Leave them out if you\'re worried.')),
     h('h2', {}, 'Serious misconduct'),
     h('p', {}, 'If you experienced harassment, discrimination, or illegal activity, consider also reporting it to the relevant labor authority or an employment lawyer — a post here is not a legal complaint.'),
   ));
@@ -359,6 +381,7 @@ function guidelinesView() {
 
 function shareView() {
   setNav('share');
+  if (!ME) return needLogin('Log in or sign up to share your story.');
   const L = META.limits;
   const err = h('div', { class: 'err', role: 'alert' });
   const field = (name) => app.querySelector(`[data-field="${name}"]`);
@@ -385,16 +408,19 @@ function shareView() {
   const checkPii = () => { piiWarn.hidden = !piiRe.test(story.value); };
 
   const agree = h('input', { type: 'checkbox', id: 'f-agree' });
+  const hideName = h('input', { type: 'checkbox', id: 'f-hide' });
+  hideName.addEventListener('change', () => { const sub = form.querySelector('.composer-head .muted'); if (sub) sub.textContent = hideName.checked ? 'Posting without your username' : 'Posting as your username'; });
   const submit = h('button', { class: 'btn btn-primary', type: 'submit' }, 'Post anonymously');
 
   const form = h('form', { class: 'composer card', novalidate: true },
     h('div', { class: 'composer-head' },
-      h('span', { class: 'avatar', 'aria-hidden': 'true' }, '?'),
-      h('div', {}, h('b', {}, 'Anonymous'), h('div', { class: 'muted small' }, 'No account. No name. No email.'))),
+      h('span', { class: 'avatar', 'aria-hidden': 'true' }, ME.username[0].toUpperCase()),
+      h('div', {}, h('b', {}, `@${ME.username}`), h('div', { class: 'muted small' }, hideName.checked ? 'Posting without your username' : 'Posting as your username'))),
     h('div', { class: 'row2' }, h('div', { 'data-field': 'company' }, company, suggest), h('div', { 'data-field': 'role' }, role)),
     h('div', { 'data-field': 'story' }, story, h('div', { class: 'hint' }, h('span', { class: 'muted small' }, 'Refer to people by role, not name.'), count)),
     piiWarn,
     h('div', { class: 'notice ai' }, h('b', {}, '✨ AI reads your post. '), 'It detects themes like burnout or broken promises, and groups companies with similar patterns. You don\'t tag anything.'),
+    h('label', { class: 'check' }, hideName, h('span', {}, 'Hide my username on this post')),
     h('label', { class: 'check', 'data-field': 'agree' }, agree, h('span', {}, 'This is my own honest experience and I haven\'t named private individuals. ', h('a', { href: '#/guidelines', target: '_blank' }, 'Guidelines'))),
     err,
     h('div', { class: 'actions' }, submit, h('a', { class: 'btn btn-ghost', href: '#/' }, 'Cancel')),
@@ -407,12 +433,10 @@ function shareView() {
     form.querySelectorAll('.err.inline').forEach((el) => el.remove());
     submit.disabled = true; submit.textContent = 'Posting…';
     try {
-      const res = await api('/api/stories', { method: 'POST', body: { company: company.value, role: role.value, story: story.value, agree: agree.checked } });
-      const mine = store.get('lo_mine', {});
-      mine[res.story.id] = res.deleteToken;
-      store.set('lo_mine', mine);
+      const res = await api('/api/stories', { method: 'POST', body: { company: company.value, role: role.value, story: story.value, anonymous: hideName.checked, agree: agree.checked } });
       postedView(res);
     } catch (ex) {
+      if (ex.status === 401) { ME = null; paintAuth(); return needLogin('Your session expired. Please log in again.'); }
       const fields = ex.data?.errors || {};
       for (const [k, msg] of Object.entries(fields)) {
         const f = form.querySelector(`[data-field="${k}"]`);
@@ -432,39 +456,72 @@ function shareView() {
   fill(app, h('h1', {}, 'Share your exit'), h('p', { class: 'muted' }, 'Write it like a post. No forms to fill in.'), form);
 }
 
-function postedView({ story, deleteToken, redactedCount }) {
+function postedView({ story, redactedCount }) {
   fill(app, h('section', { class: 'card' },
-    h('h1', {}, 'Your story is live 🎉'),
+    h('h1', {}, 'Your post is live 🎉'),
     h('p', {}, 'Thank you. Someone is about to make a better decision because of it.'),
     h('div', { class: 'notice ai' }, '✨ Our AI is reading your post now to detect themes. Refresh in a moment to see them.'),
     redactedCount > 0 && h('div', { class: 'notice warn' }, `We removed ${plural(redactedCount, 'piece')} of contact info to protect privacy.`),
-    h('h2', { style: { marginTop: '16px' } }, 'Your private delete key'),
-    h('p', { class: 'muted small' }, 'This browser remembers it, but save a copy if you might want to delete your story from another device. We can\'t recover it.'),
-    h('div', { class: 'token' }, `${story.id}:${deleteToken}`),
+    h('p', { class: 'muted small', style: { marginTop: '12px' } }, 'You can delete your post any time from its page while logged in.'),
     h('div', { class: 'actions' },
-      h('a', { class: 'btn btn-primary', href: `#/story/${story.id}` }, 'View your story'),
-      h('a', { class: 'btn', href: '#/delete' }, 'Delete with a key'),
+      h('a', { class: 'btn btn-primary', href: `#/story/${story.id}` }, 'View your post'),
       h('a', { class: 'btn btn-ghost', href: '#/' }, 'Back to stories')),
   ));
 }
 
-function deleteView() {
-  const input = h('input', { type: 'text', placeholder: 'story-id:key', 'aria-label': 'Delete key' });
-  fill(app, h('form', {
-    class: 'card form',
-    onsubmit: async (e) => {
-      e.preventDefault();
-      const [id, token] = input.value.trim().split(':');
-      if (!id || !token) return toast('Paste the full key, including the colon.');
-      if (!confirm('Delete this story permanently?')) return;
-      try {
-        await api(`/api/stories/${id}`, { method: 'DELETE', headers: { 'X-Delete-Token': token } });
-        toast('Story deleted.');
-        location.hash = '#/';
-      } catch (err) { toast(err.message); }
-    },
-  }, h('h1', {}, 'Delete a story'), h('p', { class: 'muted' }, 'Paste the delete key you got when you posted.'), input,
-  h('div', {}, h('button', { class: 'btn btn-primary', type: 'submit' }, 'Delete story'))));
+// ---------- accounts ----------
+function authView(mode, params) {
+  setNav(mode);
+  if (ME) { location.hash = '#/'; return; }
+  const signup = mode === 'signup';
+  const next = params.get('next') || '/';
+  const username = h('input', { type: 'text', id: 'a-user', autocomplete: 'username', autocapitalize: 'none', spellcheck: 'false', maxlength: META.limits.username.max, 'aria-label': 'Username', placeholder: 'Username' });
+  const password = h('input', { type: 'password', id: 'a-pass', autocomplete: signup ? 'new-password' : 'current-password', 'aria-label': 'Password', placeholder: signup ? `Password (${META.limits.password.min}+ characters)` : 'Password' });
+  const err = h('div', { class: 'err', role: 'alert' });
+  const submit = h('button', { class: 'btn btn-primary', type: 'submit' }, signup ? 'Create account' : 'Log in');
+  const form = h('form', { class: 'card form', novalidate: true },
+    h('h1', {}, signup ? 'Create your account' : 'Log in'),
+    signup && h('div', { class: 'notice' },
+      h('b', {}, 'Pick a username that isn\'t your real name. '),
+      'No email needed. Your posts show this username (you can hide it per post). We can\'t reset a forgotten password, so save it somewhere safe.'),
+    h('div', { class: 'field', 'data-field': 'username' }, username),
+    h('div', { class: 'field', 'data-field': 'password' }, password),
+    err,
+    h('div', { class: 'actions' }, submit,
+      signup ? h('a', { class: 'btn btn-ghost', href: `#/login?next=${encodeURIComponent(next)}` }, 'I have an account')
+             : h('a', { class: 'btn btn-ghost', href: `#/signup?next=${encodeURIComponent(next)}` }, 'Create an account')),
+  );
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    err.textContent = '';
+    form.querySelectorAll('.err.inline').forEach((x) => x.remove());
+    submit.disabled = true;
+    try {
+      const r = await api(`/api/auth/${signup ? 'register' : 'login'}`, { method: 'POST', body: { username: username.value, password: password.value } });
+      ME = r.user; paintAuth();
+      toast(signup ? `Welcome, @${ME.username}!` : `Welcome back, @${ME.username}.`);
+      location.hash = `#${next.startsWith('/') ? next : '/'}`;
+    } catch (ex) {
+      const fields = ex.data?.errors || {};
+      for (const [k, msg] of Object.entries(fields)) form.querySelector(`[data-field="${k}"]`)?.append(h('div', { class: 'err inline' }, msg));
+      err.textContent = Object.keys(fields).length ? '' : ex.message;
+      submit.disabled = false;
+    }
+  });
+  fill(app, form);
+  username.focus();
+}
+
+async function userView(name) {
+  setNav(ME && ME.username.toLowerCase() === name.toLowerCase() ? 'me' : '');
+  const { user, items } = await api(`/api/users/${encodeURIComponent(name)}`);
+  document.title = `@${user.username} — LinkedOut`;
+  fill(app,
+    h('section', { class: 'card composer-head' },
+      h('span', { class: 'avatar', 'aria-hidden': 'true' }, user.username[0].toUpperCase()),
+      h('div', {}, h('h1', { style: { margin: 0 } }, `@${user.username}`), h('div', { class: 'muted small' }, `Joined ${user.joined} · ${plural(items.length, 'public post')}`))),
+    items.length ? items.map(storyCard) : h('div', { class: 'empty' }, 'No public posts yet.'),
+  );
 }
 
 async function modView() {
@@ -492,12 +549,17 @@ async function modView() {
         return h('article', { class: 'card' },
           h('div', { class: 'meta' }, h('span', { class: 'tag' }, s.status), h('b', {}, plural(s.reports.length, 'report')),
             Object.entries(counts).map(([k, n]) => h('span', {}, `${META.reportReasons[k]} ×${n}`))),
+          h('div', { class: 'meta' }, h('b', {}, `Account: ${s.account ? `@${s.account}` : 'legacy post'}`), s.author ? null : h('span', {}, '(post hides username)')),
           storyMeta(s), h('h3', {}, s.title), h('p', { class: 'excerpt' }, s.story),
           s.advice && h('div', { class: 'advice' }, s.advice),
           h('div', { class: 'actions' },
             h('button', { class: 'btn', type: 'button', onclick: act('restore') }, 'Restore & clear reports'),
             s.status === 'visible' && h('button', { class: 'btn', type: 'button', onclick: act('hide') }, 'Hide'),
-            h('button', { class: 'btn btn-danger', type: 'button', onclick: () => confirm('Permanently remove content?') && act('remove')() }, 'Remove')));
+            h('button', { class: 'btn btn-danger', type: 'button', onclick: () => confirm('Permanently remove content?') && act('remove')() }, 'Remove'),
+            s.account && h('button', { class: 'btn btn-danger', type: 'button', onclick: async () => {
+              if (!confirm(`Ban @${s.account}? This hides all their posts and ends their sessions.`)) return;
+              try { await api(`/api/admin/users/${s.account}/ban`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } }); toast(`@${s.account} banned.`); load(); } catch (e) { toast(e.message); }
+            } }, 'Ban account')));
       }));
     } catch (e) {
       fill(box, h('p', { class: 'err' }, e.message));
@@ -511,6 +573,7 @@ async function modView() {
 }
 
 // ---------- router ----------
+let meLoaded = false;
 async function route() {
   const [path, query = ''] = location.hash.replace(/^#/, '').split('?');
   const params = new URLSearchParams(query);
@@ -520,6 +583,7 @@ async function route() {
   loading();
   try {
     META ??= await api('/api/meta');
+    if (!meLoaded) { ME = (await api('/api/auth/me').catch(() => ({ user: null }))).user; meLoaded = true; paintAuth(); }
     switch (parts[0]) {
       case undefined: return await feedView(params);
       case 'story': return await storyView(parts[1]);
@@ -527,7 +591,9 @@ async function route() {
       case 'company': return await companyView(parts[1]);
       case 'share': return shareView();
       case 'guidelines': return guidelinesView();
-      case 'delete': return deleteView();
+      case 'login': return authView('login', params);
+      case 'signup': return authView('signup', params);
+      case 'user': return await userView(parts[1]);
       case 'mod': return await modView();
       default: throw new Error('Page not found.');
     }

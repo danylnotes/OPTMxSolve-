@@ -87,7 +87,7 @@ p { margin: 0 0 12px; }
 .tag { display: inline-block; background: var(--accent-soft); color: var(--accent); border-radius: 999px; padding: 2px 10px; font-size: 0.8rem; font-weight: 500; }
 
 /* inputs */
-input[type="text"], input[type="search"], select, textarea {
+input[type="text"], input[type="search"], input[type="password"], select, textarea {
   width: 100%; font: inherit; color: var(--text); background: var(--surface);
   border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px;
 }
@@ -188,3 +188,16 @@ dialog .check { margin-bottom: 6px !important; }
 .ai-label { font-size: 0.78rem; color: var(--muted); align-self: center; margin-right: 2px; }
 .pattern { margin-top: 12px; }
 .pattern .tags { margin: 4px 0 0; }
+
+/* accounts */
+.auth-slot { display: inline-flex; align-items: center; gap: 4px; }
+.auth-slot a { text-decoration: none; padding: 6px 10px; border-radius: 8px; color: var(--muted); }
+.auth-slot a:hover, .auth-slot a.active { color: var(--text); background: var(--surface-2); }
+.auth-slot .me-link { color: var(--accent); font-weight: 600; }
+.linklike { font: inherit; background: none; border: 0; color: var(--muted); padding: 6px 8px; border-radius: 8px; cursor: pointer; }
+.linklike:hover { color: var(--text); background: var(--surface-2); }
+.meta .author { color: var(--accent); }
+.meta .author.anon { color: var(--muted); font-weight: 600; }
+.form .field { display: block; }
+.form .field input { font-size: 1rem; }
+.form .invalid input { border-color: var(--danger); }
