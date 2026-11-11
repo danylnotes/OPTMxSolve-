@@ -68,7 +68,8 @@ function errorView(err) {
 
 // ---------- story card ----------
 function reasonTags(reasons) {
-  return h('div', { class: 'tags' }, reasons.map((r) => h('a', { class: 'tag', href: `#/?reason=${r}`, style: { textDecoration: 'none' } }, META.reasons[r] || r)));
+  if (!reasons.length) return null;
+  return h('div', { class: 'tags' }, h('span', { class: 'ai-label', title: 'Themes detected automatically from the post' }, '✨ AI-detected'), reasons.map((r) => h('a', { class: 'tag', href: `#/?reason=${r}`, style: { textDecoration: 'none' } }, META.reasons[r] || r)));
 }
 
 function relateButton(s) {
@@ -276,9 +277,18 @@ async function companiesView(params) {
       )) : [h('div', { class: 'empty' }, 'No companies found.')]));
   }
   let t;
+  const { items: patterns } = await api('/api/patterns');
   fill(app,
     h('h1', {}, 'Companies'),
-    h('p', { class: 'muted' }, 'Ranked by number of exit stories. Rating = "would you recommend working here?"'),
+    patterns.length > 0 && h('section', { class: 'card' },
+      h('h2', {}, '✨ Patterns across firms'),
+      h('p', { class: 'muted small' }, 'AI reads every post and groups companies where the same problem keeps coming up.'),
+      patterns.map((pt) => h('div', { class: 'pattern' },
+        h('b', {}, pt.label),
+        h('div', { class: 'tags' }, pt.firms.map((f) =>
+          h('a', { class: 'tag', style: { textDecoration: 'none' }, href: `#/company/${f.slug}` }, `${f.name} · ${f.pct}%`)))))),
+    h('h2', { style: { marginTop: '20px' } }, 'All companies'),
+    h('p', { class: 'muted small' }, 'Ranked by number of posts. Score is the AI-read sentiment: 1 = would not recommend, 5 = would.'),
     h('div', { class: 'filters' }, h('input', {
       type: 'search', placeholder: 'Find a company…', 'aria-label': 'Find a company', value: params.get('q') || '',
       oninput: (e) => { clearTimeout(t); t = setTimeout(() => load(e.target.value), 200); },
@@ -299,6 +309,7 @@ async function companyView(slug) {
       h('h1', {}, c.name),
       h('div', { class: 'meta' }, h('span', {}, plural(c.count, 'exit story', 'exit stories')), stars(Math.round(c.avgRating)), h('span', {}, `${c.avgRating} / 5 would recommend`)),
       h('h2', { style: { marginTop: '16px' } }, 'Why people left'),
+      h('p', { class: 'muted small' }, `✨ Patterns detected by AI across ${plural(c.count, 'post')}`),
       h('div', { class: 'bars' }, c.topReasons.map((r) =>
         h('div', { class: 'bar-row' },
           h('span', {}, r.label),
@@ -306,6 +317,13 @@ async function companyView(slug) {
           h('span', { class: 'muted small' }, `${r.pct}%`)))),
       c.count < 3 && h('p', { class: 'muted small', style: { marginTop: '12px' } }, 'Based on very few stories — treat as anecdotal.'),
     ),
+    c.similar?.length > 0 && h('section', { class: 'card' },
+      h('h2', {}, 'Firms with a similar pattern'),
+      h('p', { class: 'muted small' }, 'Grouped by how closely the reasons people left match.'),
+      h('div', { class: 'company-list' }, c.similar.map((f) =>
+        h('a', { class: 'card company-row', href: `#/company/${f.slug}` },
+          h('div', {}, h('h3', {}, f.name), h('span', { class: 'muted small' }, `Shared: ${f.shared.join(', ')}`)),
+          h('span', { class: 'tag' }, `${Math.round(f.similarity * 100)}% match`))))),
     h('h2', { style: { margin: '24px 0 12px' } }, `Stories (${total})`),
     items.map(storyCard),
   );
@@ -342,20 +360,10 @@ function guidelinesView() {
 function shareView() {
   setNav('share');
   const L = META.limits;
-  const errs = {};
+  const err = h('div', { class: 'err', role: 'alert' });
+  const field = (name) => app.querySelector(`[data-field="${name}"]`);
 
-  const field = (name, label, control, hint) => {
-    const err = h('div', { class: 'err', id: `err-${name}` });
-    errs[name] = err;
-    return h('div', { class: 'field', 'data-field': name }, h('label', { for: `f-${name}` }, label), control, hint && h('div', { class: 'hint' }, hint), err);
-  };
-  const counter = (el, max) => {
-    const c = h('span', {}, `0 / ${max}`);
-    el.addEventListener('input', () => { c.textContent = `${el.value.length} / ${max}`; });
-    return c;
-  };
-
-  const company = h('input', { id: 'f-company', name: 'company', type: 'text', maxlength: L.company.max, required: true, autocomplete: 'off', list: 'company-suggest', placeholder: 'e.g. Acme Corp' });
+  const company = h('input', { id: 'f-company', type: 'text', maxlength: L.company.max, autocomplete: 'off', list: 'company-suggest', placeholder: 'Company (e.g. Acme Corp)', 'aria-label': 'Company', required: true });
   const suggest = h('datalist', { id: 'company-suggest' });
   let st;
   company.addEventListener('input', () => {
@@ -364,111 +372,71 @@ function shareView() {
       const q = company.value.trim();
       if (q.length < 2) return;
       const { items } = await api(`/api/companies?q=${encodeURIComponent(q)}`).catch(() => ({ items: [] }));
-      fill(suggest, ...items.slice(0, 8).map((c) => h('option', { value: c.name })));
+      fill(suggest, items.slice(0, 8).map((c) => h('option', { value: c.name })));
     }, 200);
   });
-  const role = h('input', { id: 'f-role', name: 'role', type: 'text', maxlength: L.role.max, placeholder: 'e.g. Software Engineer (optional)', autocomplete: 'off' });
-  const tenure = h('select', { id: 'f-tenure', name: 'tenure' }, h('option', { value: '' }, 'Prefer not to say'),
-    Object.entries(META.tenures).map(([k, v]) => h('option', { value: k }, v)));
-  const title = h('input', { id: 'f-title', name: 'title', type: 'text', maxlength: L.title.max, required: true, placeholder: 'Sum it up in one line' });
-  const story = h('textarea', { id: 'f-story', name: 'story', maxlength: L.story.max, required: true, placeholder: 'What actually happened? What was the moment you knew you had to leave?' });
-  const advice = h('textarea', { id: 'f-advice', name: 'advice', maxlength: L.advice.max, style: { minHeight: '90px' }, placeholder: 'What should someone considering this job know? (optional)' });
+  const role = h('input', { id: 'f-role', type: 'text', maxlength: L.role.max, autocomplete: 'off', placeholder: 'Your role (optional)', 'aria-label': 'Your role' });
+  const story = h('textarea', { id: 'f-story', maxlength: L.story.max, 'aria-label': 'Your post', placeholder: 'Why did you leave? Say it however you want. Our AI will pick out the themes.' });
+  const count = h('span', { class: 'muted small' }, `0 / ${L.story.max}`);
+  story.addEventListener('input', () => { count.textContent = `${story.value.length} / ${L.story.max}`; checkPii(); });
 
-  const piiWarn = h('div', { class: 'notice warn', hidden: true });
+  const piiWarn = h('div', { class: 'notice warn', hidden: true }, h('b', {}, 'Heads up: '), 'emails, phone numbers, links and @handles are removed automatically when you post.');
   const piiRe = /([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})|((?:https?:\/\/|www\.)\S+)|(\+?\(?\d(?:[\s().-]{0,2}\d){8,})|((^|\s)@[A-Za-z0-9_]{2,})/i;
-  const checkPii = () => { piiWarn.hidden = ![role, title, story, advice].some((el) => piiRe.test(el.value)); };
-  piiWarn.append(h('b', {}, 'Heads up: '), 'it looks like you included an email, phone number, link or @handle. These will be removed automatically when you post.');
-  [role, title, story, advice].forEach((el) => el.addEventListener('input', checkPii));
+  const checkPii = () => { piiWarn.hidden = !piiRe.test(story.value); };
 
-  const reasonsErr = h('div', { class: 'err' }); errs.reasons = reasonsErr;
-  const reasons = h('fieldset', { class: 'field', 'data-field': 'reasons' },
-    h('legend', {}, `Why did you leave? (pick up to ${L.reasons.max})`),
-    h('div', { class: 'reason-grid' }, Object.entries(META.reasons).map(([k, v]) =>
-      h('label', { class: 'check' }, h('input', { type: 'checkbox', name: 'reasons', value: k }), v))),
-    reasonsErr);
-  reasons.addEventListener('change', () => {
-    const boxes = [...reasons.querySelectorAll('input')];
-    const n = boxes.filter((b) => b.checked).length;
-    boxes.forEach((b) => { b.disabled = !b.checked && n >= L.reasons.max; });
-  });
-
-  const ratingErr = h('div', { class: 'err' }); errs.rating = ratingErr;
-  const rating = h('fieldset', { class: 'field', 'data-field': 'rating' },
-    h('legend', {}, 'Would you recommend working there?'),
-    h('div', { class: 'rating' }, [1, 2, 3, 4, 5].map((n) =>
-      h('label', {}, h('input', { type: 'radio', name: 'rating', value: n }), h('span', {}, `${n}★`)))),
-    h('div', { class: 'hint' }, h('span', {}, '1 = run, 5 = it was fine, I just moved on')),
-    ratingErr);
-
-  const agreeErr = h('div', { class: 'err' }); errs.agree = agreeErr;
-  const agree = h('div', { class: 'field', 'data-field': 'agree' },
-    h('label', { class: 'check' }, h('input', { type: 'checkbox', name: 'agree', id: 'f-agree' }),
-      h('span', {}, 'This is my own honest experience, and I haven\'t named or identified any private individuals. I\'ve read the ', h('a', { href: '#/guidelines', target: '_blank' }, 'guidelines'), '.')),
-    agreeErr);
-
+  const agree = h('input', { type: 'checkbox', id: 'f-agree' });
   const submit = h('button', { class: 'btn btn-primary', type: 'submit' }, 'Post anonymously');
-  const formErr = h('div', { class: 'err', role: 'alert' });
 
-  const form = h('form', { class: 'form card', novalidate: true },
-    h('div', { class: 'notice' }, h('b', {}, 'You\'re anonymous here. '), 'No account, no email, no name. Refer to people by role, not name.'),
-    h('div', { class: 'row2' }, field('company', 'Company', h('div', {}, company, suggest)), field('role', 'Your role', role)),
-    field('tenure', 'How long were you there?', tenure),
-    reasons,
-    field('title', 'Headline', title, [h('span', {}, 'Keep it factual'), counter(title, L.title.max)]),
-    field('story', 'Your story', story, [h('span', {}, `At least ${L.story.min} characters`), counter(story, L.story.max)]),
+  const form = h('form', { class: 'composer card', novalidate: true },
+    h('div', { class: 'composer-head' },
+      h('span', { class: 'avatar', 'aria-hidden': 'true' }, '?'),
+      h('div', {}, h('b', {}, 'Anonymous'), h('div', { class: 'muted small' }, 'No account. No name. No email.'))),
+    h('div', { class: 'row2' }, h('div', { 'data-field': 'company' }, company, suggest), h('div', { 'data-field': 'role' }, role)),
+    h('div', { 'data-field': 'story' }, story, h('div', { class: 'hint' }, h('span', { class: 'muted small' }, 'Refer to people by role, not name.'), count)),
     piiWarn,
-    field('advice', 'Advice for the next person', advice, [h('span', {}), counter(advice, L.advice.max)]),
-    rating, agree, formErr,
+    h('div', { class: 'notice ai' }, h('b', {}, '✨ AI reads your post. '), 'It detects themes like burnout or broken promises, and groups companies with similar patterns. You don\'t tag anything.'),
+    h('label', { class: 'check', 'data-field': 'agree' }, agree, h('span', {}, 'This is my own honest experience and I haven\'t named private individuals. ', h('a', { href: '#/guidelines', target: '_blank' }, 'Guidelines'))),
+    err,
     h('div', { class: 'actions' }, submit, h('a', { class: 'btn btn-ghost', href: '#/' }, 'Cancel')),
   );
 
-  // Clear a field's error as soon as the user touches it.
-  form.addEventListener('input', (e) => {
-    const f = e.target.closest('[data-field]');
-    if (f?.classList.contains('invalid')) { f.classList.remove('invalid'); if (errs[f.dataset.field]) errs[f.dataset.field].textContent = ''; }
-  });
-
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
-    Object.values(errs).forEach((el) => { el.textContent = ''; });
+    err.textContent = '';
     form.querySelectorAll('.invalid').forEach((el) => el.classList.remove('invalid'));
-    formErr.textContent = '';
-    const fd = new FormData(form);
-    const body = {
-      company: company.value, role: role.value, tenure: tenure.value, title: title.value,
-      story: story.value, advice: advice.value, reasons: fd.getAll('reasons'),
-      rating: Number(fd.get('rating')), agree: fd.get('agree') === 'on',
-    };
+    form.querySelectorAll('.err.inline').forEach((el) => el.remove());
     submit.disabled = true; submit.textContent = 'Posting…';
     try {
-      const res = await api('/api/stories', { method: 'POST', body });
+      const res = await api('/api/stories', { method: 'POST', body: { company: company.value, role: role.value, story: story.value, agree: agree.checked } });
       const mine = store.get('lo_mine', {});
       mine[res.story.id] = res.deleteToken;
       store.set('lo_mine', mine);
       postedView(res);
-    } catch (err) {
-      if (err.data?.errors) {
-        let first;
-        for (const [k, msg] of Object.entries(err.data.errors)) {
-          if (errs[k]) errs[k].textContent = msg;
-          const f = form.querySelector(`[data-field="${k}"]`);
-          f?.classList.add('invalid');
-          first ??= f;
-        }
-        first?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    } catch (ex) {
+      const fields = ex.data?.errors || {};
+      for (const [k, msg] of Object.entries(fields)) {
+        const f = form.querySelector(`[data-field="${k}"]`);
+        f?.classList.add('invalid');
+        f?.append(h('div', { class: 'err inline' }, msg));
       }
-      formErr.textContent = err.message;
+      err.textContent = Object.keys(fields).length ? '' : ex.message;
+      form.querySelector('.invalid')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       submit.disabled = false; submit.textContent = 'Post anonymously';
     }
   });
+  form.addEventListener('input', (e) => {
+    const f = e.target.closest('.invalid');
+    if (f) { f.classList.remove('invalid'); f.querySelector('.err.inline')?.remove(); }
+  });
 
-  fill(app, h('h1', {}, 'Share your exit'), h('p', { class: 'muted' }, 'Tell the next person what the job listing didn\'t.'), form);
+  fill(app, h('h1', {}, 'Share your exit'), h('p', { class: 'muted' }, 'Write it like a post. No forms to fill in.'), form);
 }
 
 function postedView({ story, deleteToken, redactedCount }) {
   fill(app, h('section', { class: 'card' },
     h('h1', {}, 'Your story is live 🎉'),
     h('p', {}, 'Thank you. Someone is about to make a better decision because of it.'),
+    h('div', { class: 'notice ai' }, '✨ Our AI is reading your post now to detect themes. Refresh in a moment to see them.'),
     redactedCount > 0 && h('div', { class: 'notice warn' }, `We removed ${plural(redactedCount, 'piece')} of contact info to protect privacy.`),
     h('h2', { style: { marginTop: '16px' } }, 'Your private delete key'),
     h('p', { class: 'muted small' }, 'This browser remembers it, but save a copy if you might want to delete your story from another device. We can\'t recover it.'),

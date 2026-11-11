@@ -2,14 +2,16 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import { createApp } from '../server.js';
+import { createAnalyzer } from '../lib/analyzer.js';
 import { Store, AUTO_HIDE_REPORTS } from '../lib/store.js';
 
-let server, base;
+let server, base, app;
 const store = new Store(null);
 const ADMIN = 'test-admin-token';
 
 before(async () => {
-  server = http.createServer(createApp({ store, secret: 's', adminToken: ADMIN }));
+  app = createApp({ store, secret: 's', adminToken: ADMIN, analyzer: createAnalyzer({ apiKey: '' }) });
+  server = http.createServer(app);
   await new Promise((r) => server.listen(0, r));
   base = `http://127.0.0.1:${server.address().port}`;
 });
@@ -28,10 +30,7 @@ const cookieFrom = (sc) => sc.split(';')[0];
 const payload = {
   company: 'Initech',
   role: 'Analyst',
-  title: 'TPS reports forever',
-  story: 'Eight different managers asked me about the same report cover sheet every morning for a year.',
-  rating: 1,
-  reasons: ['micromanagement', 'toxic_management'],
+  story: 'Eight different managers asked me about the same report cover sheet every morning for a year. Total micromanagement and my manager yelled when I forgot it.',
   tenure: '1-3y',
   agree: true,
 };
@@ -46,11 +45,16 @@ test('full story lifecycle', async () => {
   const { story, deleteToken } = created.body;
   assert.ok(deleteToken);
   assert.equal(story.relates, 0);
+  await app.idle();
+  const analyzed = (await call(`/api/stories/${story.id}`)).body.story;
+  assert.ok(analyzed.reasons.includes('micromanagement'), 'themes are derived from the text');
+  assert.ok(analyzed.title.length > 0, 'headline is derived from the text');
   assert.equal(story.createdAt.length, 10, 'timestamps are coarsened');
   assert.equal(story.deleteTokenHash, undefined, 'internal fields are not leaked');
 
-  const list = await call('/api/stories?q=tps');
+  const list = await call('/api/stories?q=cover');
   assert.equal(list.body.total, 1);
+  assert.equal((await call('/api/stories?reason=micromanagement')).body.total, 1, 'filterable by AI-detected theme');
   assert.equal((await call('/api/stories?reason=burnout')).body.total, 0);
 
   // relate toggles per voter
@@ -64,6 +68,8 @@ test('full story lifecycle', async () => {
   const company = await call('/api/companies/initech');
   assert.equal(company.body.count, 1);
   assert.equal(company.body.topReasons[0].pct, 100);
+  assert.ok(Array.isArray(company.body.similar));
+  assert.ok(Array.isArray((await call('/api/patterns')).body.items));
 
   // delete with wrong / right token
   assert.equal((await call(`/api/stories/${story.id}`, { method: 'DELETE', headers: { 'x-delete-token': 'nope' } })).status, 403);

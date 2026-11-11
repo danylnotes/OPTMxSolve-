@@ -5,37 +5,35 @@ import { validateStory, scrub, normalizeCompany } from '../lib/validate.js';
 const good = {
   company: 'Acme, Inc.',
   role: 'Engineer',
-  title: 'Burned out in a year',
   story: 'My manager scheduled meetings at 11pm and expected replies within minutes, every single day.',
-  advice: 'Ask about on-call during the interview.',
   tenure: '6m-1y',
-  rating: 2,
-  reasons: ['burnout', 'toxic_management'],
   agree: true,
 };
 
-test('accepts a valid story and normalizes company', () => {
+test('a post is just company + free text; no tags required', () => {
+  const r = validateStory({ company: 'Acme', story: 'I quit because of the constant overtime.', agree: true });
+  assert.equal(r.ok, true);
+  assert.equal(r.value.companySlug, 'acme');
+  assert.equal(r.value.reasons, undefined, 'themes come from the analyzer, not the author');
+});
+
+test('accepts a valid post and normalizes company', () => {
   const r = validateStory(good);
   assert.equal(r.ok, true);
   assert.equal(r.value.companySlug, 'acme');
   assert.equal(r.redactedCount, 0);
 });
 
-test('requires guideline agreement, reasons and rating', () => {
-  const r = validateStory({ ...good, agree: false, reasons: [], rating: 9 });
-  assert.equal(r.ok, false);
-  assert.ok(r.errors.agree && r.errors.reasons && r.errors.rating);
-});
-
-test('rejects unknown reasons and too many reasons', () => {
-  assert.ok(validateStory({ ...good, reasons: ['nope'] }).errors.reasons);
-  assert.ok(validateStory({ ...good, reasons: ['burnout', 'underpaid', 'no_growth', 'culture', 'rto', 'harassment'] }).errors.reasons);
+test('requires guideline agreement and a real company', () => {
+  const r = validateStory({ ...good, agree: false });
+  assert.ok(r.errors.agree);
+  assert.ok(validateStory({ ...good, company: '!!' }).errors.company);
 });
 
 test('enforces length limits', () => {
   assert.ok(validateStory({ ...good, story: 'too short' }).errors.story);
-  assert.ok(validateStory({ ...good, title: 'x'.repeat(500) }).errors.title);
-  assert.ok(validateStory({ ...good, company: '!!' }).errors.company);
+  assert.ok(validateStory({ ...good, story: 'x'.repeat(5000) }).errors.story);
+  assert.ok(validateStory({ ...good, tenure: 'forever' }).errors.tenure);
 });
 
 test('scrubs emails, phones, links and handles', () => {
@@ -51,10 +49,10 @@ test('redaction is applied to stored story fields', () => {
   assert.match(r.value.story, /\[email removed\]/);
 });
 
-test('normalizeCompany groups variants', () => {
-  assert.equal(normalizeCompany('Globex Corporation'), normalizeCompany('globex'));
-});
-
 test('does not redact year ranges or small numbers', () => {
   assert.equal(scrub('From 2019-2020 I worked 60 hour weeks for 3 years.').redacted, 0);
+});
+
+test('normalizeCompany groups variants', () => {
+  assert.equal(normalizeCompany('Globex Corporation'), normalizeCompany('globex'));
 });

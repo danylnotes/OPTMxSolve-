@@ -25,9 +25,13 @@ export class Store {
     renameSync(tmp, this.file);
   }
 
-  create(value, { now = Date.now(), deleteTokenHash = null } = {}) {
+  create(value, { now = Date.now(), deleteTokenHash = null, analysis = null } = {}) {
     const story = {
       id: randomUUID(),
+      title: '',
+      advice: '',
+      rating: 3,
+      reasons: [],
       ...value,
       deleteTokenHash,
       createdAt: new Date(now).toISOString(),
@@ -36,8 +40,24 @@ export class Store {
       status: 'visible', // visible | hidden | removed
     };
     this.data.stories.push(story);
-    this.#save();
+    if (analysis) this.setAnalysis(story.id, analysis);
+    else this.#save();
     return story;
+  }
+
+  /**
+   * Attach AI analysis. Themes, sentiment and headline are derived from the post
+   * and feed every aggregate (company pages, patterns, similar firms).
+   */
+  setAnalysis(id, analysis) {
+    const s = this.get(id);
+    if (!s || s.status === 'removed') return null;
+    s.analysis = { ...analysis, analyzedAt: new Date().toISOString() };
+    s.reasons = analysis.themes;
+    s.rating = analysis.sentiment;
+    s.title = analysis.headline;
+    this.#save();
+    return s;
   }
 
   get(id) {
@@ -162,6 +182,67 @@ export class Store {
     };
   }
 
+  /** Share of a company's posts mentioning each theme, as a sparse {theme: 0..1} vector. */
+  #themeVectors() {
+    const by = new Map();
+    for (const s of this.data.stories) {
+      if (s.status !== 'visible') continue;
+      const c = by.get(s.companySlug) ?? { n: 0, counts: {}, names: new Map() };
+      c.n++;
+      c.names.set(s.company, (c.names.get(s.company) ?? 0) + 1);
+      for (const r of s.reasons) c.counts[r] = (c.counts[r] ?? 0) + 1;
+      by.set(s.companySlug, c);
+    }
+    return [...by.entries()].map(([slug, c]) => ({
+      slug,
+      n: c.n,
+      name: [...c.names.entries()].sort((a, b) => b[1] - a[1])[0][0],
+      vec: Object.fromEntries(Object.entries(c.counts).map(([k, v]) => [k, v / c.n])),
+    }));
+  }
+
+  /** Firms whose reasons-for-leaving profile looks like this one (cosine similarity). */
+  similarFirms(slug, { limit = 3, min = 0.5 } = {}) {
+    const all = this.#themeVectors();
+    const me = all.find((c) => c.slug === slug);
+    if (!me || !Object.keys(me.vec).length) return [];
+    const norm = (v) => Math.sqrt(Object.values(v).reduce((a, x) => a + x * x, 0));
+    const dot = (a, b) => Object.keys(a).reduce((t, k) => t + a[k] * (b[k] ?? 0), 0);
+    return all
+      .filter((c) => c.slug !== slug && Object.keys(c.vec).length)
+      .map((c) => ({
+        slug: c.slug,
+        name: c.name,
+        count: c.n,
+        similarity: dot(me.vec, c.vec) / (norm(me.vec) * norm(c.vec)),
+        shared: Object.keys(me.vec)
+          .filter((k) => c.vec[k])
+          .sort((a, b) => me.vec[b] + c.vec[b] - (me.vec[a] + c.vec[a]))
+          .slice(0, 3)
+          .map((k) => REASONS[k]),
+      }))
+      .filter((c) => c.similarity >= min)
+      .sort((a, b) => b.similarity - a.similarity)
+      .slice(0, limit)
+      .map((c) => ({ ...c, similarity: Math.round(c.similarity * 100) / 100 }));
+  }
+
+  /** For each theme, the firms where it shows up in at least `minShare` (a third) of posts. Only themes with 2+ firms. */
+  patterns({ minShare = 0.33 } = {}) {
+    const all = this.#themeVectors();
+    return Object.keys(REASONS)
+      .map((key) => ({
+        key,
+        label: REASONS[key],
+        firms: all
+          .filter((c) => (c.vec[key] ?? 0) >= minShare)
+          .sort((a, b) => b.vec[key] - a.vec[key] || b.n - a.n)
+          .map((c) => ({ slug: c.slug, name: c.name, count: c.n, pct: Math.round(c.vec[key] * 100) })),
+      }))
+      .filter((p) => p.firms.length >= 2)
+      .sort((a, b) => b.firms.length - a.firms.length);
+  }
+
   globalStats() {
     const visible = this.data.stories.filter((s) => s.status === 'visible');
     const counts = {};
@@ -190,6 +271,7 @@ export function toPublic(s, voter) {
     tenure: s.tenure,
     rating: s.rating,
     reasons: s.reasons,
+    aiSource: s.analysis?.source ?? null,
     // Day precision only: exact timestamps make it easier to unmask authors.
     createdAt: s.createdAt.slice(0, 10),
     relates: s.relates.length,

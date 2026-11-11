@@ -5,6 +5,7 @@ import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { extname, join, normalize, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Store, toPublic } from './lib/store.js';
+import { createAnalyzer, heuristicAnalyze } from './lib/analyzer.js';
 import { validateStory, REASONS, TENURES, LIMITS, REPORT_REASONS } from './lib/validate.js';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
@@ -42,6 +43,7 @@ export function rateLimiter({ limit, windowMs }) {
 
 export function createApp({
   store,
+  analyzer = createAnalyzer(),
   secret = process.env.LINKEDOUT_SECRET || randomBytes(32).toString('hex'),
   adminToken = process.env.ADMIN_TOKEN || '',
   postLimit = rateLimiter({ limit: 5, windowMs: 60 * 60 * 1000 }),
@@ -110,6 +112,25 @@ export function createApp({
     return got.length === want.length && timingSafeEqual(got, want);
   };
 
+  const pending = new Set();
+  function analyzeInBackground(id, text) {
+    const job = analyzer
+      .analyze(text)
+      .then((a) => store.setAnalysis(id, a))
+      .catch((err) => console.error('analysis failed', err))
+      .finally(() => pending.delete(job));
+    pending.add(job);
+    return job;
+  }
+  /** Resolves when all background analyses have finished (used by tests and backfill). */
+  const idle = async () => { while (pending.size) await Promise.all([...pending]); };
+  const backfill = () => {
+    for (const st of store.data.stories) {
+      if (st.status !== 'removed' && st.story && st.analysis?.source !== 'claude' && analyzer.backend === 'claude') analyzeInBackground(st.id, st.story);
+      else if (st.status !== 'removed' && st.story && !st.analysis) store.setAnalysis(st.id, heuristicAnalyze(st.story));
+    }
+  };
+
   const requireStory = (id) => {
     const s = store.get(id);
     if (!s || s.status !== 'visible') throw new HttpError(404, 'Story not found.');
@@ -150,7 +171,13 @@ export function createApp({
       const result = validateStory(await readJson(req));
       if (!result.ok) throw new HttpError(422, 'Please fix the highlighted fields.', { errors: result.errors });
       const deleteToken = randomBytes(18).toString('base64url');
-      const story = store.create(result.value, { deleteTokenHash: hash(`d:${deleteToken}`) });
+      // Publish immediately with a fast offline analysis, then upgrade it with the
+      // model in the background so posting never waits on an API call.
+      const story = store.create(result.value, {
+        deleteTokenHash: hash(`d:${deleteToken}`),
+        analysis: heuristicAnalyze(result.value.story),
+      });
+      analyzeInBackground(story.id, result.value.story);
       return send(res, 201, {
         story: toPublic(story, voterFor(req, res)),
         deleteToken,
@@ -187,8 +214,10 @@ export function createApp({
     if (method === 'GET' && (p = m(/^\/api\/companies\/([a-z0-9-]+)$/))) {
       const stats = store.companyStats(p[1]);
       if (!stats) throw new HttpError(404, 'No stories for this company yet.');
-      return send(res, 200, stats);
+      return send(res, 200, { ...stats, similar: store.similarFirms(p[1]) });
     }
+
+    if (method === 'GET' && pathname === '/api/patterns') return send(res, 200, { items: store.patterns() });
 
     // --- moderation ---
     if (pathname.startsWith('/api/admin/')) {
@@ -232,7 +261,7 @@ export function createApp({
     res.end(req.method === 'HEAD' ? undefined : body);
   }
 
-  return async function handler(req, res) {
+  async function handler(req, res) {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'no-referrer');
     res.setHeader('X-Frame-Options', 'DENY');
@@ -249,7 +278,8 @@ export function createApp({
       if (status === 500) console.error(err);
       if (!res.headersSent) send(res, status, { error: status === 500 ? 'Server error.' : err.message, ...err.extra });
     }
-  };
+  }
+  return Object.assign(handler, { idle, backfill });
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
@@ -257,5 +287,8 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const store = new Store(process.env.DATA_FILE || join(ROOT, 'data', 'linkedout.json'));
   if (!process.env.ADMIN_TOKEN) console.warn('ADMIN_TOKEN not set: moderation API is disabled.');
   if (!process.env.LINKEDOUT_SECRET) console.warn('LINKEDOUT_SECRET not set: using a random secret (votes/delete tokens reset on restart).');
-  http.createServer(createApp({ store })).listen(port, () => console.log(`LinkedOut running on http://localhost:${port}`));
+  const app = createApp({ store });
+  app.backfill();
+  console.log(`Post analysis: ${process.env.ANTHROPIC_API_KEY ? 'Claude' : 'keyword heuristic (set ANTHROPIC_API_KEY for Claude)'}`);
+  http.createServer(app).listen(port, () => console.log(`LinkedOut running on http://localhost:${port}`));
 }

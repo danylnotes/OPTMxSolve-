@@ -175,3 +175,16 @@ dialog .check { margin-bottom: 6px !important; }
   .stats { gap: 8px 20px; }
   .stat b { font-size: 1.25rem; }
 }
+
+/* composer */
+.composer { display: grid; gap: 14px; }
+.composer-head { display: flex; align-items: center; gap: 12px; }
+.avatar { display: inline-grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; background: var(--surface-2); border: 1px solid var(--border); font-weight: 700; color: var(--muted); }
+.composer textarea { min-height: 200px; font-size: 1.05rem; }
+.composer .hint { display: flex; justify-content: space-between; gap: 8px; margin-top: 4px; }
+.composer .invalid input, .composer .invalid textarea { border-color: var(--danger); }
+.err.inline { margin-top: 4px; }
+.notice.ai { background: var(--accent-soft); border-color: transparent; }
+.ai-label { font-size: 0.78rem; color: var(--muted); align-self: center; margin-right: 2px; }
+.pattern { margin-top: 12px; }
+.pattern .tags { margin: 4px 0 0; }
