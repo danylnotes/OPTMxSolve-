@@ -56,9 +56,9 @@ p { margin: 0 0 12px; }
 .brand { display: flex; align-items: center; gap: 8px; text-decoration: none; font-size: 1.2rem; font-weight: 600; }
 .brand b { color: var(--accent); }
 .logo { display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 8px; background: var(--accent); color: var(--accent-ink); font-weight: 800; font-size: 0.85rem; }
-.nav { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.nav, .nav-links { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
 .nav a:not(.btn) { text-decoration: none; padding: 6px 10px; border-radius: 8px; color: var(--muted); }
-.nav a:not(.btn):hover, .nav a.active { color: var(--text); background: var(--surface-2); }
+.nav a:not(.btn):hover, .nav a:not(.btn).active { color: var(--text); background: var(--surface-2); }
 
 /* buttons */
 .btn { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border); background: var(--surface); color: var(--text); padding: 8px 14px; border-radius: 999px; font: inherit; font-size: 0.95rem; cursor: pointer; text-decoration: none; }
@@ -161,5 +161,17 @@ dialog .check { margin-bottom: 6px !important; }
   .filters { grid-template-columns: 1fr; }
   .bar-row { grid-template-columns: 1fr 44px; }
   .bar-row .bar { grid-column: 1 / -1; grid-row: 2; }
-  .nav a:not(.btn) { padding: 6px 8px; }
+  /* Compact two-row header: brand + Share on top, links below. */
+  .topbar-inner { display: grid; grid-template-columns: 1fr auto; gap: 0 8px; min-height: 0; padding-top: 8px; padding-bottom: 4px; }
+  .nav { display: contents; }
+  .nav .btn { grid-column: 2; grid-row: 1; padding: 6px 12px; font-size: 0.875rem; }
+  .nav a:not(.btn) { padding: 6px 8px; font-size: 0.9rem; }
+  .nav-links { grid-column: 1 / -1; display: flex; gap: 2px; margin: 4px -8px 0; }
+  .brand { font-size: 1.1rem; }
+  .hero { padding-top: 8px; }
+  .chips { flex-wrap: nowrap; overflow-x: auto; margin: 0 -16px 16px; padding: 0 16px 4px; scrollbar-width: none; }
+  .chips::-webkit-scrollbar { display: none; }
+  .chip { flex: none; }
+  .stats { gap: 8px 20px; }
+  .stat b { font-size: 1.25rem; }
 }
